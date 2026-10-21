@@ -1,0 +1,104 @@
+id,pattern,match_type,merchant_id
+1,DMART,contains,1
+2,AVENUE SUPERMARTS,contains,1
+3,BIGBASKET,contains,2
+4,INNOVATIVE RETAIL,contains,2
+5,BLINKIT,contains,3
+6,GROFERS,contains,3
+7,ZEPTO,contains,4
+8,KIRANAKART,contains,4
+9,RELIANCE SMART,contains,5
+10,RELIANCE RETAIL,contains,5
+11,SWIGGY INSTAMART,contains,6
+12,ZOMATO,contains,7
+13,SWIGGY,contains,8
+14,STARBUCKS,contains,9
+15,TATA STARBUCKS,contains,9
+16,BARBEQUE NATION,contains,10
+17,BARBEQUE-NATION,contains,10
+18,MCDONALDS,contains,11
+19,HARDCASTLE RESTAURANTS,contains,11
+20,DOMINOS,contains,12
+21,JUBILANT FOODWORKS,contains,12
+22,HALDIRAM,contains,13
+23,VAISHALI RESTAURANT,contains,14
+24,CHITALE BANDHU,contains,15
+25,CAFE MOCHA,contains,16
+26,THIRD WAVE COFFEE,contains,17
+27,BLUE TOKAI,contains,18
+28,TRUFFLES,contains,19
+29,UBER INDIA,contains,20
+30,UBER,contains,20
+31,OLACABS,contains,21
+32,ANI TECHNOLOGIES,contains,21
+33,\bOLA\b,regex,21
+34,RAPIDO,contains,22
+35,ROPPEN TRANSPORTATION,contains,22
+36,FASTAG,contains,23
+37,NAMMA YATRI,contains,24
+38,HPCL,contains,25
+39,HP PETROL,contains,25
+40,INDIAN OIL,contains,26
+41,IOCL,contains,26
+42,BPCL,contains,27
+43,BHARAT PETROLEUM,contains,27
+44,MSEDCL,contains,28
+45,MAHADISCOM,contains,28
+46,BESCOM,contains,29
+47,RELIANCE JIO,contains,30
+48,JIO PREPAID,contains,30
+49,BHARTI AIRTEL,contains,31
+50,AIRTEL POSTPAID,contains,31
+51,ACT FIBERNET,contains,32
+52,ATRIA CONVERGENCE,contains,32
+53,KIDZEE,contains,33
+54,ZEE LEARN,contains,33
+55,FIRSTCRY,contains,34
+56,BRAINBEES,contains,34
+57,HAMLEYS,contains,35
+58,STAR HEALTH,contains,36
+59,HDFC LIFE,contains,37
+60,HDFC STANDARD LIFE,contains,37
+61,APOLLO PHARMACY,contains,38
+62,APOLLO PHARMA,contains,38
+63,MEDPLUS,contains,39
+64,PRACTO,contains,40
+65,LAL PATH,contains,41
+66,LALPATHLABS,contains,41
+67,AMAZON PAY INDIA,contains,42
+68,AMAZON SELLER SERVICES,contains,42
+69,AMAZON,contains,42
+70,FLIPKART,contains,43
+71,MYNTRA,contains,44
+72,DECATHLON,contains,45
+73,CROMA,contains,46
+74,INFINITI RETAIL,contains,46
+75,PANTALOONS,contains,47
+76,NYKAA,contains,48
+77,FSN E-COMMERCE,contains,48
+78,TANISHQ,contains,49
+79,TITAN COMPANY,contains,49
+80,NETFLIX,contains,50
+81,SPOTIFY,contains,51
+82,PVR,contains,52
+83,INOX,contains,52
+84,BOOKMYSHOW,contains,53
+85,BIGTREE ENTERTAINMENT,contains,53
+86,CULT.FIT,contains,54
+87,CUREFIT,contains,54
+88,NATURALS SALON,contains,55
+89,URBAN COMPANY,contains,56
+90,URBANCLAP,contains,56
+91,IRCTC,contains,57
+92,HDFC LTD,contains,58
+93,HDFC HOME LOAN,contains,58
+94,SUNITA BAI,contains,59
+95,NOBROKER RENT,contains,60
+96,NOBROKERHOOD,contains,60
+97,ATM WDL,contains,61
+98,NWD,contains,61
+99,SMS ALERT CHARGES,contains,62
+100,ACME TECHNOLOGIES,contains,63
+101,ZENITH ANALYTICS,contains,64
+102,RAMESH DESHMUKH,contains,65
+103,LATHA NAIR,contains,66

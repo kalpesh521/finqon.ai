@@ -1,0 +1,54 @@
+# FinQon.ai API. The database is Neon: there is deliberately no Postgres service here.
+#
+#   cp .env.example .env            # then fill it in
+#   docker compose --profile setup run --rm setup    # once: roles, migrations, seed data
+#   docker compose up --build api   # the API on http://localhost:8000
+#   docker compose --profile eval run --rm eval       # writes eval/reports/latest.md
+
+name: finqon
+
+x-tools: &tools
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+    target: tools
+  env_file: .env
+  working_dir: /app/backend
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: api
+    env_file: .env
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  # One-off: create the three roles, apply migrations, load the two seed users.
+  # Needs FINQON_ADMIN_DATABASE_URL (the Neon owner) in .env. Safe to run again.
+  setup:
+    <<: *tools
+    profiles: ["setup"]
+    command:
+      - sh
+      - -c
+      - python -m finqon.db.bootstrap_roles && alembic upgrade head && python ../dataset/load_ledger.py
+
+  # One-off: run the evaluation set against the live model and write the report.
+  eval:
+    <<: *tools
+    profiles: ["eval"]
+    command: ["python", "../eval/run_eval.py"]
+    volumes:
+      - ./eval/reports:/app/eval/reports
+
+  # One-off: the full test suite, including tests against the real database.
+  test:
+    <<: *tools
+    profiles: ["test"]
+    command: ["pytest", "-q"]

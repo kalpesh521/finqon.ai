@@ -1,0 +1,126 @@
+"""Chat orchestration glue: conversations, history, persistence, and the SSE stream."""
+
+from __future__ import annotations
+
+import logging
+import uuid
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+
+from finqon.agent.contracts import AgentDeps, AgentLimits, ModelUsage, TurnInput, TurnRecord
+from finqon.agent.date_ranges import today_in
+from finqon.agent.orchestrator import run_turn
+from finqon.agent.prompt_builder import HistoryTurn
+from finqon.core.errors import NotFoundError
+from finqon.repositories.conversations import ConversationRepository, NewMessage
+from finqon.repositories.usage import UsageRepository
+from finqon.resources import Resources
+from finqon.schemas.chat import ChatEvent, ErrorEvent
+from finqon.schemas.conversations import ConversationDetail, ConversationSummary
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class OpenedConversation:
+    id: uuid.UUID
+    history: list[HistoryTurn]
+    previous_sql: str | None
+
+
+class ChatService:
+    def __init__(self, resources: Resources) -> None:
+        self._r = resources
+
+    # -- conversations ----------------------------------------------------------------
+
+    async def open_conversation(
+        self, user_id: uuid.UUID, conversation_id: uuid.UUID | None, first_message: str
+    ) -> OpenedConversation:
+        """Create a conversation or load one the user owns. Raises ``NotFoundError``."""
+        settings = self._r.settings
+        async with self._r.database.user_scope(user_id) as session:
+            repo = ConversationRepository(session)
+            if conversation_id is None:
+                created = await repo.create(user_id, first_message.strip())
+                return OpenedConversation(created.id, [], None)
+            if await repo.get(conversation_id) is None:
+                # Not found and not owned look identical, on purpose.
+                raise NotFoundError("Conversation not found.")
+            recent = await repo.recent_messages(conversation_id, settings.agent_history_turns)
+
+        history = [HistoryTurn(m.question, m.sql, m.result_summary, m.answer) for m in recent]
+        previous_sql = next((m.sql for m in reversed(recent) if m.sql), None)
+        return OpenedConversation(conversation_id, history, previous_sql)
+
+    async def list_conversations(
+        self, user_id: uuid.UUID, limit: int, offset: int
+    ) -> list[ConversationSummary]:
+        async with self._r.database.user_scope(user_id) as session:
+            return await ConversationRepository(session).list_recent(limit, offset)
+
+    async def get_conversation(
+        self, user_id: uuid.UUID, conversation_id: uuid.UUID
+    ) -> ConversationDetail:
+        async with self._r.database.user_scope(user_id) as session:
+            repo = ConversationRepository(session)
+            summary = await repo.get(conversation_id)
+            if summary is None:
+                raise NotFoundError("Conversation not found.")
+            messages = await repo.messages(conversation_id)
+        return ConversationDetail(**summary.model_dump(), messages=messages)
+
+    # -- the turn ----------------------------------------------------------------------
+
+    async def stream_turn(
+        self, user_id: uuid.UUID, conversation: OpenedConversation, question: str
+    ) -> AsyncIterator[ChatEvent]:
+        settings = self._r.settings
+        turn = TurnInput(
+            user_id=user_id,
+            conversation_id=conversation.id,
+            question=question,
+            today=today_in(settings.tz),
+            history=conversation.history,
+            previous_sql=conversation.previous_sql,
+        )
+        deps = AgentDeps(
+            llm=self._r.llm,
+            sql=self._r.executor,
+            catalog=self._r.catalog,
+            record_usage=self._record_usage,
+            save_turn=self._save_turn,
+            limits=AgentLimits(
+                max_model_steps=settings.agent_max_model_steps,
+                max_sql_executions=settings.agent_max_sql_executions,
+                max_repairs=settings.agent_max_repairs,
+                deadline_seconds=settings.agent_deadline_seconds,
+            ),
+        )
+        try:
+            async for event in run_turn(turn, deps):
+                yield event
+        except Exception:
+            logger.exception("chat_turn_failed")
+            yield ErrorEvent(code="internal_error", message="Something went wrong. Please retry.")
+
+    async def _record_usage(self, usage: ModelUsage) -> None:
+        async with self._r.database.session() as session:
+            await UsageRepository(session).record(usage)
+
+    async def _save_turn(self, record: TurnRecord) -> uuid.UUID:
+        async with self._r.database.user_scope(record.user_id) as session:
+            return await ConversationRepository(session).add_message(
+                NewMessage(
+                    conversation_id=record.conversation_id,
+                    user_id=record.user_id,
+                    question=record.question,
+                    sql=record.sql,
+                    purpose=record.purpose,
+                    result_summary=record.result_summary,
+                    answer=record.answer,
+                    status=record.status,
+                    prompt_tokens=record.usage.prompt_tokens,
+                    completion_tokens=record.usage.completion_tokens,
+                )
+            )

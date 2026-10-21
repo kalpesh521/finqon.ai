@@ -1,0 +1,68 @@
+id,name,default_category_id
+1,DMart,2
+2,BigBasket,2
+3,Blinkit,2
+4,Zepto,2
+5,Reliance Smart,2
+6,Swiggy Instamart,2
+7,Zomato,3
+8,Swiggy,3
+9,Starbucks,3
+10,Barbeque Nation,3
+11,McDonald's,3
+12,Domino's,3
+13,Haldiram's,3
+14,Vaishali Restaurant,3
+15,Chitale Bandhu,3
+16,Cafe Mocha,3
+17,Third Wave Coffee,3
+18,Blue Tokai,3
+19,Truffles,3
+20,Uber,4
+21,Ola,4
+22,Rapido,4
+23,FASTag,4
+24,Namma Yatri,4
+25,HP Petrol Pump,5
+26,Indian Oil,5
+27,Bharat Petroleum,5
+28,MSEDCL Electricity,6
+29,BESCOM Electricity,6
+30,Jio Mobile,6
+31,Airtel,6
+32,ACT Fibernet,6
+33,Kidzee Preschool,7
+34,FirstCry,12
+35,Hamleys,12
+36,Star Health Insurance,8
+37,HDFC Life Term Plan,8
+38,Apollo Pharmacy,9
+39,MedPlus,9
+40,Practo,9
+41,Dr Lal PathLabs,9
+42,Amazon,10
+43,Flipkart,10
+44,Myntra,10
+45,Decathlon,10
+46,Croma,10
+47,Pantaloons,10
+48,Nykaa,10
+49,Tanishq,10
+50,Netflix,11
+51,Spotify,11
+52,PVR Cinemas,11
+53,BookMyShow,11
+54,Cult.fit,11
+55,Naturals Salon,13
+56,Urban Company,13
+57,IRCTC,14
+58,HDFC Home Loan,1
+59,Domestic Help,1
+60,Monthly Rent,1
+61,ATM Withdrawal,15
+62,Bank Charges,16
+63,Acme Technologies,18
+64,Zenith Analytics,18
+65,Parents Support,19
+66,Family Support,19
+67,Unknown Merchant,17

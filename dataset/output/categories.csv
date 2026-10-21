@@ -1,0 +1,20 @@
+id,name,parent_id,kind
+1,Housing,,expense
+2,Groceries,,expense
+3,Dining,,expense
+4,Transport,,expense
+5,Fuel,4,expense
+6,Utilities,,expense
+7,Education,,expense
+8,Insurance,,expense
+9,Healthcare,,expense
+10,Shopping,,expense
+11,Entertainment,,expense
+12,Kids,,expense
+13,Personal Care,,expense
+14,Travel,,expense
+15,Cash Withdrawal,,expense
+16,Fees & Charges,,expense
+17,Uncategorised,,expense
+18,Salary,,income
+19,Family Support,,transfer

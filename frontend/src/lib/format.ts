@@ -136,8 +136,8 @@ export function axisLabel(label: string): string {
 
 export function statusLabel(stage: "thinking" | "querying" | "summarizing"): string {
     if (stage === "thinking") return "Reading your statement…";
-    if (stage === "querying") return "Checking the totals…";
-    return "Writing the answer…";
+    if (stage === "querying") return "Running the SQL safely…";
+    return "Preparing your answer…";
 }
 
 export function queryHeading(index: number, total: number): string | null {

@@ -53,7 +53,7 @@ export function Composer({ disabled, onSend }: ComposerProps) {
                     rows={1}
                     maxLength={2000}
                     disabled={disabled}
-                    placeholder="Ask about your transactions…"
+                    placeholder="Ask about spending, merchants, or categories…"
                     onKeyDown={onKeyDown}
                     onInput={(event) => resize(event.currentTarget)}
                     className="no-scrollbar max-h-28 min-h-11 flex-1 resize-none bg-transparent px-2 py-2 text-base leading-6 text-white outline-none placeholder:text-white/35 disabled:opacity-60 sm:text-sm sm:leading-5"

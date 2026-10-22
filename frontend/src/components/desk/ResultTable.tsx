@@ -33,7 +33,7 @@ export function ResultTable({ columns, rows }: ResultTableProps) {
                     {rows.length === 0 ? (
                         <tr>
                             <td colSpan={columns.length} className="px-3 py-6 text-center text-muted">
-                                Nothing in your statement matched that question.
+                                No matching transactions were found for that question.
                             </td>
                         </tr>
                     ) : (

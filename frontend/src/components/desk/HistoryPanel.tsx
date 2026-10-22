@@ -102,7 +102,7 @@ export function HistoryPanel({
             <div className="no-scrollbar mt-3 min-h-0 flex-1 overflow-y-auto px-2 pb-3">
                 {error ? <p className="px-2 py-2 text-sm text-[#be123c]">{error}</p> : null}
                 {groups.length === 0 ? (
-                    <p className="px-2 py-6 text-sm text-muted">No questions yet.</p>
+                    <p className="px-2 py-6 text-sm text-muted">No statement chats yet.</p>
                 ) : (
                     groups.map((group) => (
                         <section key={group.label} className="mb-4">
@@ -319,7 +319,7 @@ function ChatMenu({
         >
             {confirming ? (
                 <div className="px-2 py-2">
-                    <p className="px-1 pb-2 text-[13px] font-medium">Delete this chat?</p>
+                    <p className="px-1 pb-2 text-[13px] font-medium">Delete this analysis?</p>
                     <div className="flex gap-2">
                         <button
                             type="button"

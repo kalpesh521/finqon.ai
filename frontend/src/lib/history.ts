@@ -63,13 +63,13 @@ function formatGroupDay(key: string): string {
 }
 
 export const FOLLOW_UPS = [
-    "What about the month before?",
-    "Break that down by merchant",
+    "Compare with the previous month",
+    "Break this down by merchant",
     "Who are my top 5 merchants?",
 ] as const;
 
 export const STARTERS = [
-    "How much did I spend on eating out last month?",
-    "Give me a category-wise spending breakdown",
-    "Which merchant did I spend the most with?",
+    "How much did I spend on dining last month?",
+    "Show my spending by category",
+    "Which merchant received the most money?",
 ] as const;

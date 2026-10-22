@@ -26,7 +26,7 @@ export function EvidencePanel({ state, onChart, framed = true }: EvidencePanelPr
             <header className="shrink-0">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Evidence</p>
                 <h2 className="mt-1 text-lg font-semibold leading-snug sm:text-xl">
-                    {evidence?.title || "The last successful query"}
+                    {evidence?.title || "Latest query evidence"}
                 </h2>
             </header>
             {evidence ? <EvidenceBody evidence={evidence} state={state} onChart={onChart} framed={framed} /> : <EmptyEvidence />}
@@ -60,7 +60,7 @@ function EvidenceBody({
             ) : null}
             {evidence.rows.length === 0 && evidence.columns.length === 0 ? (
                 <p className="mt-3 rounded-2xl bg-white/5 px-4 py-6 text-sm text-muted">
-                    Nothing in your statement matched that question.
+                    No matching transactions were found for that question.
                 </p>
             ) : null}
             {showChart && kind ? (
@@ -111,7 +111,7 @@ function EvidenceBody({
 function EmptyEvidence() {
     return (
         <p className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-6 text-sm leading-6 text-muted">
-            The chart and table for the latest answer appear here, using the same rows as the query.
+            Ask a question to see the chart, table, and rows used to support the answer.
         </p>
     );
 }

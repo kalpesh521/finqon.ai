@@ -42,14 +42,14 @@ function Landing({ onSignIn }: { onSignIn: () => void }) {
                     transition={{ duration: 0.55, ease: "easeOut" }}
                 >
                     <h1 className="text-[2rem] font-semibold leading-tight tracking-tight md:text-4xl lg:text-5xl">
-                        Ask your statement.
+                        Ask your bank statement.
                         <span className="mt-2 block bg-gradient-to-r from-[#F7FAFF] to-[#70E7FF] bg-clip-text text-transparent">
                             See the proof.
                         </span>
                     </h1>
                     <p className="mt-4 max-w-sm text-base leading-7 text-[#D5DEF2] md:mt-5">
-                        Ask in plain language.{" "}
-                        <span className="font-medium text-[#70E7FF]">Finqon.ai</span> answers from your transactions and shows the rows.
+                        Ask spending questions in plain language.{" "}
+                        <span className="font-medium text-[#70E7FF]">Finqon.ai</span> answers from your transactions and shows the SQL, chart, and rows.
                     </p>
                     <motion.button
                         type="button"
@@ -60,7 +60,7 @@ function Landing({ onSignIn }: { onSignIn: () => void }) {
                         animate={{ boxShadow: ["0 12px 32px rgba(77,124,255,0.35)", "0 12px 36px rgba(112,231,255,0.45)", "0 12px 32px rgba(77,124,255,0.35)"] }}
                         transition={{ boxShadow: { duration: 2.4, repeat: Infinity, ease: "easeInOut" }, scale: { duration: 0.2 } }}
                     >
-                        Get started
+                        Analyze my statement
                         <span className="transition group-hover:translate-x-1" aria-hidden="true">
                             →
                         </span>
@@ -93,9 +93,9 @@ function SignInStage() {
             <div className="relative flex w-full max-w-[420px] flex-col items-center">
                 <h1 className="text-center text-2xl font-semibold leading-tight tracking-tight [@media(min-height:820px)]:text-4xl">
                     <span className="bg-gradient-to-r from-[#F7FAFF] via-[#9FD4FF] to-[#70E7FF] bg-clip-text text-transparent">
-                        Ask your statement.
+                        Continue your statement analysis.
                     </span>
-                    <span className="mt-1 block text-[#70E7FF]">See the proof.</span>
+                    <span className="mt-1 block text-[#70E7FF]">Answers with proof.</span>
                 </h1>
                 <div className="mt-4 w-full [@media(min-height:820px)]:mt-8">
                     <AuthCard align="center" />

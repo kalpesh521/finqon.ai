@@ -221,9 +221,9 @@ export function EmptyThread({ name, onSuggest }: { name: string; onSuggest: (tex
                 </span>
             </div>
             <p className="text-lg font-medium text-white/55">Hi, {name}</p>
-            <h2 className="mt-1 text-[1.75rem] font-semibold leading-tight sm:text-4xl">How can I help today?</h2>
+            <h2 className="mt-1 text-[1.75rem] font-semibold leading-tight sm:text-4xl">Ask about your money.</h2>
             <p className="mt-3 max-w-md text-sm font-normal leading-6 text-muted">
-                Ask about a merchant, a category, or a month. The answer arrives with the query and the rows.
+                Ask about spending, merchants, categories, dates, or trends. Every answer can show the SQL, chart, and source rows.
             </p>
             <div className="mt-7 grid w-full gap-3 sm:grid-cols-3">
                 {STARTERS.map((starter, index) => (

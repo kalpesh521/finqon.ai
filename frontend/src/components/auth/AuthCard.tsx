@@ -152,7 +152,7 @@ export function AuthCard({ align = "start" }: { align?: "start" | "center" }) {
                     disabled={pending}
                     className="mt-1 flex h-11 w-full items-center justify-center rounded-2xl bg-[#4D7CFF] text-base font-semibold text-white shadow-[0_10px_24px_rgba(77,124,255,0.45)] transition hover:bg-[#6B93FF] disabled:cursor-wait disabled:opacity-70 [@media(min-height:860px)]:h-12"
                 >
-                    {pending ? "Please wait…" : mode === "login" ? "Sign in" : "Create account"}
+                    {pending ? (mode === "login" ? "Signing in…" : "Creating account…") : mode === "login" ? "Sign in" : "Create account"}
                 </button>
             </form>
         </motion.div>
@@ -196,7 +196,7 @@ function switchMode(
 }
 
 function validate(mode: Mode, name: string, email: string, password: string, confirm: string): string | null {
-    if (mode === "register" && name.trim().length < 2) return "Enter the name we should greet you with.";
+    if (mode === "register" && name.trim().length < 2) return "Enter the name Finqon.ai should greet you with.";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return "Enter a valid email address.";
     if (mode === "login" && password.length === 0) return "Enter your password.";
     if (mode === "register" && password.length < 10) return "Use at least 10 characters.";

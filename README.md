@@ -343,20 +343,101 @@ Layering, trust boundaries, probes and known gaps: [docs/architecture.md](docs/a
 
 ## Frontend
 
-The UI is a Vite + React + TypeScript app in `frontend/`. It signs in against `/api/v1/auth`,
-streams `POST /api/v1/chat`, and plots `table.rows` (never numbers copied out of the answer
-text). Event types in `frontend/src/types/events.ts` are generated from `frontend/openapi.json`;
-each event is checked with Zod before the chat reducer sees it.
+The UI is a Vite + React 19 + TypeScript app in `frontend/`. It is one product with three
+screens: a landing page with a 3D finance scene, a sign-in / register card, and the chat
+desk. After login it talks only to `/api/v1`: auth, conversations, the statement summary,
+and the SSE chat stream. Charts are plotted from `table.rows`, never from numbers copied
+out of the assistant's sentence.
+
+### Stack
+
+| Piece | Choice |
+| --- | --- |
+| Bundler | Vite 7, `/api` and `/health` proxied to `http://127.0.0.1:8000` |
+| UI | React 19, TypeScript (`strict`, `noUncheckedIndexedAccess`, `verbatimModuleSyntax`) |
+| Styling | Tailwind CSS 4 (`@tailwindcss/vite`), Poppins and IBM Plex Mono |
+| Motion | Framer Motion (auth card, desk drawers, SQL toggle, status steps) |
+| Landing 3D | Three.js, React Three Fiber, `@react-three/drei` |
+| Charts | Recharts (donut and line) plus custom horizontal bars |
+| Contract | `openapi-typescript` → `src/types/events.ts`; Zod parses every SSE event |
+| Tests | Vitest on the chat reducer and SSE frame parser |
+
+No routing library, no Redux, no chart SDK besides Recharts. Session state lives in
+`AuthProvider` and `useChatStream`.
+
+### Screens
+
+**Landing.** Full-viewport dark canvas (`#05070F`). Copy on the left; a continuously
+animated 3D scene on the right: assistant, two bank cards (Visa and RuPay, different last
+fours), coins, bars, and a donut. Narrow viewports drop to a lighter scene. The CTA opens
+the auth card.
+
+**Sign in / register.** Centered card. Sign-in and register share the same fields so the
+layout does not jump. Access JWT stays in memory; the refresh token is in `localStorage`
+(or session storage when the session is not kept). Concurrent 401s share one refresh
+flight. Logout clears storage and returns to landing.
+
+**Chat desk.** Three columns on a wide screen: conversation history, the thread, and the
+evidence panel.
+
+| Region | What it does |
+| --- | --- |
+| History | Past chats grouped by day (Pinned / Today / Yesterday). Collapse to a 72px rail, or open as a drawer under 1120px. Rename, pin, delete |
+| Thread | User and assistant turns, animated status steps (`thinking` → `querying` → `summarizing`), Show SQL, follow-up chips, Try again |
+| Composer | Question field and Send. Disabled while a turn is streaming |
+| Evidence | Title of the last successful query, total, Bar / Pie / Line, chart, table, truncation note |
+
+Under 800px the evidence panel follows the answer and a “View chart and table” link
+scrolls to it. The composer stays at the bottom. Visible scrollbars are hidden; panels
+still scroll.
+
+The chart event names a kind and column names only. `EvidenceChart` reads values from
+`table.rows`. Empty results show the empty message and no chart frame. Switching Bar /
+Pie / Line reuses the same rows.
+
+### How a turn is rendered
+
+`POST /api/v1/chat` is read as SSE (`src/api/chatStream.ts`). Each frame is parsed, then
+checked with Zod (`src/api/eventSchema.ts`) before `chatReducer` sees it.
+
+```
+status → sql → table → chart → token… → done
+```
+
+`useChatStream` owns conversations, the statement summary, and abort. The active
+conversation id is restored after refresh. Result rows are not stored with the
+conversation, so a reload shows questions and answers; the chart fills in on the next
+question.
+
+### Layout
+
+```
+frontend/src/
+  api/           HTTP client, SSE reader, Zod event schema
+  auth/          AuthProvider, refresh lock, storage
+  components/
+    auth/        landing, AuthCard, FinanceUniverse (R3F)
+    desk/        Desk, HistoryPanel, TurnView, Composer, EvidencePanel, charts, SQL
+  hooks/         useChatStream
+  state/         chatReducer (+ Vitest)
+  types/         generated OpenAPI types
+```
+
+### Run
+
+The API on port 8000 must be up (see [Quick start](#quick-start)). Then:
 
 ```bash
 cd frontend
 npm install
 npm run dev          # http://localhost:5173, proxied to the API on :8000
+npm run typecheck
+npm test             # chat reducer and SSE parser
 ```
 
-`npm run typecheck` and `npm test` cover the stream reducer. With Docker, `docker compose up --build`
-also starts the UI on port 5173 and proxies `/api` to the API container. Regenerate the
-contract after an API change with the backend virtualenv:
+`docker compose up --build api web` serves the built UI on port 5173 and proxies `/api`
+to the API container. After an API contract change, regenerate types with the backend
+virtualenv:
 
 ```bash
 cd backend

@@ -45,7 +45,7 @@ function StatementMeta({
     status: TopBarProps["statementStatus"];
 }) {
     if (status === "loading") {
-        return <p className="text-xs text-muted">Loading statement…</p>;
+        return <p className="text-xs text-muted">Loading statement summary…</p>;
     }
     if (status === "unavailable" || !statement) {
         return <p className="text-xs text-muted">Statement summary unavailable</p>;

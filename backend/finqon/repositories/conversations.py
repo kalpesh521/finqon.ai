@@ -14,6 +14,7 @@ _MESSAGE_COLUMNS = (
     "id, question, sql, purpose, result_summary, answer, status, "
     "prompt_tokens, completion_tokens, created_at"
 )
+_SUMMARY_COLUMNS = "id, title, pinned, pinned_at, created_at, updated_at"
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,7 +41,7 @@ class ConversationRepository:
                 """
                 INSERT INTO conversation.conversations (user_id, title)
                 VALUES (:user_id, :title)
-                RETURNING id, title, created_at, updated_at
+                RETURNING id, title, pinned, pinned_at, created_at, updated_at
                 """
             ),
             {"user_id": user_id, "title": title[:120]},
@@ -50,8 +51,8 @@ class ConversationRepository:
     async def get(self, conversation_id: uuid.UUID) -> ConversationSummary | None:
         result = await self._session.execute(
             text(
-                """
-                SELECT id, title, created_at, updated_at
+                f"""
+                SELECT {_SUMMARY_COLUMNS}
                 FROM conversation.conversations WHERE id = :id
                 """
             ),
@@ -63,16 +64,53 @@ class ConversationRepository:
     async def list_recent(self, limit: int, offset: int) -> list[ConversationSummary]:
         result = await self._session.execute(
             text(
-                """
-                SELECT id, title, created_at, updated_at
+                f"""
+                SELECT {_SUMMARY_COLUMNS}
                 FROM conversation.conversations
-                ORDER BY updated_at DESC, id
+                ORDER BY pinned DESC, pinned_at DESC NULLS LAST, updated_at DESC, id
                 LIMIT :limit OFFSET :offset
                 """
             ),
             {"limit": limit, "offset": offset},
         )
         return [ConversationSummary.model_validate(r) for r in result.mappings()]
+
+    async def update(
+        self,
+        conversation_id: uuid.UUID,
+        *,
+        title: str | None,
+        pinned: bool | None,
+    ) -> ConversationSummary | None:
+        """Rename and/or pin. Returns ``None`` when the row is missing or not visible."""
+        result = await self._session.execute(
+            text(
+                f"""
+                UPDATE conversation.conversations
+                SET title = COALESCE(:title, title),
+                    pinned = COALESCE(:pinned, pinned),
+                    pinned_at = CASE
+                        WHEN :pinned IS TRUE THEN COALESCE(pinned_at, now())
+                        WHEN :pinned IS FALSE THEN NULL
+                        ELSE pinned_at
+                    END,
+                    updated_at = CASE WHEN :title IS NOT NULL THEN now() ELSE updated_at END
+                WHERE id = :id
+                RETURNING {_SUMMARY_COLUMNS}
+                """
+            ),
+            {"id": conversation_id, "title": title, "pinned": pinned},
+        )
+        row = result.mappings().one_or_none()
+        return ConversationSummary.model_validate(row) if row else None
+
+    async def delete(self, conversation_id: uuid.UUID) -> bool:
+        """Delete one conversation. Messages go with it. ``False`` when nothing was visible."""
+        result = await self._session.execute(
+            text("DELETE FROM conversation.conversations WHERE id = :id RETURNING id"),
+            {"id": conversation_id},
+        )
+        return result.scalar_one_or_none() is not None
 
     async def messages(self, conversation_id: uuid.UUID) -> list[MessageRecord]:
         result = await self._session.execute(

@@ -26,8 +26,10 @@ async def register(
     body: RegisterRequest, request: Request, service: AuthServiceDep, resources: ResourcesDep
 ) -> RegisteredUser:
     resources.auth_limiter.check(f"register:{client_key(request)}")
-    user = await service.register(body.email, body.password)
-    return RegisteredUser(id=user.id, email=user.email, created_at=user.created_at)
+    user = await service.register(body.email, body.password, body.display_name)
+    return RegisteredUser(
+        id=user.id, email=user.email, display_name=user.display_name, created_at=user.created_at
+    )
 
 
 @router.post("/login", response_model=TokenPair)
@@ -54,4 +56,4 @@ async def logout(body: LogoutRequest, service: AuthServiceDep) -> Response:
 @router.get("/me", response_model=UserResponse)
 async def me(user: CurrentUserDep, service: AuthServiceDep) -> UserResponse:
     record = await service.get_user(user.id)
-    return UserResponse(id=record.id, email=record.email)
+    return UserResponse(id=record.id, email=record.email, display_name=record.display_name)

@@ -13,28 +13,31 @@ class UserRecord:
     id: uuid.UUID
     email: str
     password_hash: str
+    display_name: str | None
     created_at: dt.datetime
 
 
-_COLUMNS = "id, email, password_hash, created_at"
+_COLUMNS = "id, email, password_hash, display_name, created_at"
 
 
 class UserRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def create(self, email: str, password_hash: str) -> UserRecord | None:
+    async def create(
+        self, email: str, password_hash: str, display_name: str | None = None
+    ) -> UserRecord | None:
         """Insert a user. Returns ``None`` when the email is already registered."""
         result = await self._session.execute(
             text(
                 f"""
-                INSERT INTO identity.users (email, password_hash)
-                VALUES (:email, :password_hash)
+                INSERT INTO identity.users (email, password_hash, display_name)
+                VALUES (:email, :password_hash, :display_name)
                 ON CONFLICT (email) DO NOTHING
                 RETURNING {_COLUMNS}
                 """
             ),
-            {"email": email, "password_hash": password_hash},
+            {"email": email, "password_hash": password_hash, "display_name": display_name},
         )
         row = result.one_or_none()
         return UserRecord(*row) if row else None

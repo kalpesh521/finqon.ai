@@ -45,6 +45,7 @@ from finqon.schemas.chat import (
     ChatEvent,
     ClarificationEvent,
     DoneEvent,
+    DoneStatus,
     ErrorEvent,
     SqlEvent,
     StatusEvent,
@@ -83,7 +84,7 @@ class _TurnFailure(Exception):
 
 @dataclass(frozen=True, slots=True)
 class _Final:
-    status: str  # answered | clarification | refused
+    status: DoneStatus
     text: str
     stream: bool = True
 
@@ -199,7 +200,10 @@ async def run_turn(turn: TurnInput, deps: AgentDeps) -> AsyncIterator[ChatEvent]
                 yield TokenEvent(text=piece)
         message_id = await deps.save_turn(_record(turn, state, final.text, final.status))
         yield DoneEvent(
-            message_id=message_id, conversation_id=turn.conversation_id, usage=state.usage
+            message_id=message_id,
+            conversation_id=turn.conversation_id,
+            usage=state.usage,
+            status=final.status,
         )
     except _TurnFailure as failure:
         await _save_failure(turn, deps, state, failure)
@@ -248,8 +252,7 @@ async def _loop(
                 verify_answer(answer, state.allowed, evidence=state.evidence) if answer else None
             )
             if answer and verdict is not None and verdict.ok:
-                status = "answered" if state.successes else "refused"
-                state.final = _Final(status, answer)
+                state.final = _Final("answered" if state.successes else "refused", answer)
                 return
             if regenerated:
                 state.final = _Final("refused", UNVERIFIED_MESSAGE)
@@ -451,7 +454,12 @@ async def _run_sql(
     state.evidence += "\n" + guarded.sql + "\n" + json.dumps(payload, default=str)
     state.awaiting_summary = True
 
-    yield TableEvent(columns=result.columns, rows=result.rows, truncated=result.truncated)
+    yield TableEvent(
+        columns=result.columns,
+        rows=result.rows,
+        truncated=result.truncated,
+        elapsed_ms=result.elapsed_ms,
+    )
     yield choose_chart(args.chart_hint, result.columns, result.row_count)
     payload["note"] = "Quote only figures and dates that appear in this result."
     messages.append(_tool_message(call, payload))

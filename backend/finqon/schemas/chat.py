@@ -56,6 +56,7 @@ class TableEvent(_Event):
     columns: list[Column]
     rows: list[list[Cell]]
     truncated: bool
+    elapsed_ms: int = Field(ge=0, description="Database execution time for this query.")
 
 
 class ChartEvent(_Event):
@@ -76,11 +77,15 @@ class TokenEvent(_Event):
     text: str
 
 
+DoneStatus = Literal["answered", "clarification", "refused"]
+
+
 class DoneEvent(_Event):
     type: Literal["done"] = "done"
     message_id: uuid.UUID
     conversation_id: uuid.UUID
     usage: TokenUsage
+    status: DoneStatus = "answered"
 
 
 class ErrorEvent(_Event):

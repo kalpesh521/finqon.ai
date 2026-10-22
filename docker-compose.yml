@@ -2,7 +2,7 @@
 #
 #   cp .env.example .env            # then fill it in
 #   docker compose --profile setup run --rm setup    # once: roles, migrations, seed data
-#   docker compose up --build api   # the API on http://localhost:8000
+#   docker compose up --build api web   # API on :8000, UI on :5173
 #   docker compose --profile eval run --rm eval       # writes eval/reports/latest.md
 
 name: finqon
@@ -28,6 +28,15 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+
+  web:
+    build:
+      context: ./frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+    restart: unless-stopped
 
   # One-off: create the three roles, apply migrations, load the two seed users.
   # Needs FINQON_ADMIN_DATABASE_URL (the Neon owner) in .env. Safe to run again.

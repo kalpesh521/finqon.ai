@@ -49,7 +49,8 @@ def test_register_response_never_contains_the_password_hash(make_client: ClientF
     response = client.post(
         "/api/v1/auth/register", json={"email": new_test_email(), "password": PASSWORD}
     )
-    assert set(response.json()) == {"id", "email", "created_at"}
+    assert set(response.json()) == {"id", "email", "display_name", "created_at"}
+    assert response.json()["display_name"] is None
 
 
 def test_duplicate_email_is_a_conflict_regardless_of_case(make_client: ClientFactory) -> None:

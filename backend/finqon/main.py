@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from finqon import __version__
-from finqon.api import auth, chat, conversations, health
+from finqon.api import auth, chat, conversations, health, statement
 from finqon.api.middleware import RequestContextMiddleware
 from finqon.api.openapi import install_chat_event_schema
 from finqon.core.config import Settings, get_settings
@@ -50,7 +50,7 @@ def create_app(
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
         expose_headers=["X-Request-ID", "X-Conversation-Id"],
     )
@@ -61,6 +61,7 @@ def create_app(
     app.include_router(auth.router, prefix="/api/v1")
     app.include_router(chat.router, prefix="/api/v1")
     app.include_router(conversations.router, prefix="/api/v1")
+    app.include_router(statement.router, prefix="/api/v1")
     install_chat_event_schema(app)
     return app
 

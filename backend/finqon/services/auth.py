@@ -29,10 +29,12 @@ class AuthService:
         self._db = database
         self._settings = settings
 
-    async def register(self, email: str, password: str) -> UserRecord:
+    async def register(
+        self, email: str, password: str, display_name: str | None = None
+    ) -> UserRecord:
         password_hash = hash_password(password)
         async with self._db.session() as session:
-            user = await UserRepository(session).create(email, password_hash)
+            user = await UserRepository(session).create(email, password_hash, display_name)
         if user is None:
             raise ConflictError("An account with this email already exists.")
         logger.info("user_registered", extra={"user_id": str(user.id)})

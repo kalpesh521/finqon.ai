@@ -16,7 +16,7 @@ from finqon.repositories.conversations import ConversationRepository, NewMessage
 from finqon.repositories.usage import UsageRepository
 from finqon.resources import Resources
 from finqon.schemas.chat import ChatEvent, ErrorEvent
-from finqon.schemas.conversations import ConversationDetail, ConversationSummary
+from finqon.schemas.conversations import ConversationDetail, ConversationSummary, ConversationUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +69,23 @@ class ChatService:
                 raise NotFoundError("Conversation not found.")
             messages = await repo.messages(conversation_id)
         return ConversationDetail(**summary.model_dump(), messages=messages)
+
+    async def update_conversation(
+        self, user_id: uuid.UUID, conversation_id: uuid.UUID, change: ConversationUpdate
+    ) -> ConversationSummary:
+        async with self._r.database.user_scope(user_id) as session:
+            updated = await ConversationRepository(session).update(
+                conversation_id, title=change.title, pinned=change.pinned
+            )
+        if updated is None:
+            raise NotFoundError("Conversation not found.")
+        return updated
+
+    async def delete_conversation(self, user_id: uuid.UUID, conversation_id: uuid.UUID) -> None:
+        async with self._r.database.user_scope(user_id) as session:
+            deleted = await ConversationRepository(session).delete(conversation_id)
+        if not deleted:
+            raise NotFoundError("Conversation not found.")
 
     # -- the turn ----------------------------------------------------------------------
 

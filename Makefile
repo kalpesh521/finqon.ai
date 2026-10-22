@@ -3,7 +3,7 @@ BACKEND := backend
 PY      := $(BACKEND)/.venv/bin
 
 .PHONY: help install lint format typecheck test test-unit test-integration check \
-        setup api eval docker-api
+        setup api eval docker-api web
 
 help: ## List the targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
@@ -40,6 +40,9 @@ setup: ## One-off: roles, migrations, seed data (needs FINQON_ADMIN_DATABASE_URL
 
 api: ## Run the API with reload on http://localhost:8000
 	cd $(BACKEND) && .venv/bin/uvicorn finqon.main:app_factory --factory --reload --port 8000
+
+web: ## Run the React UI on http://localhost:5173
+	cd frontend && npm run dev
 
 eval: ## Run the evaluation set against the live model (spends model quota)
 	cd $(BACKEND) && .venv/bin/python ../eval/run_eval.py

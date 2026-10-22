@@ -2,16 +2,20 @@
 
 import re
 from collections.abc import Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
+from finqon.api.statement import STATEMENT_SQL, _count, _date
 from finqon.core.config import ConfigurationError
 from finqon.core.security import create_access_token
 from finqon.main import create_app
 from finqon.resources import Resources
+from finqon.schemas.conversations import ConversationUpdate
+from finqon.sql.guard import validate_sql
 from tests.conftest import ScriptedLLM, unit_settings
 
 SETTINGS = unit_settings()
@@ -40,7 +44,18 @@ PROTECTED = [
     ("POST", "/api/v1/chat", {"message": "hi"}),
     ("GET", "/api/v1/conversations", None),
     ("GET", f"/api/v1/conversations/{uuid4()}", None),
+    ("PATCH", f"/api/v1/conversations/{uuid4()}", {"title": "Rent"}),
+    ("DELETE", f"/api/v1/conversations/{uuid4()}", None),
 ]
+
+
+def test_conversation_update_rejects_an_empty_change() -> None:
+    with pytest.raises(ValidationError):
+        ConversationUpdate()
+    with pytest.raises(ValidationError):
+        ConversationUpdate(title="   ")
+    assert ConversationUpdate(title="  Rent   ").title == "Rent"
+    assert ConversationUpdate(pinned=False).pinned is False
 
 
 def test_health_is_public(client: TestClient) -> None:
@@ -127,6 +142,17 @@ def test_registration_validates_input_before_touching_the_database(client: TestC
         ).status_code
         == 422
     )
+
+
+def test_statement_summary_is_a_guarded_read(client: TestClient) -> None:
+    schema = client.get("/openapi.json").json()
+    assert "/api/v1/statement" in schema["paths"]
+    guarded = validate_sql(STATEMENT_SQL)
+    assert "reporting.transactions" in guarded.sql
+    assert _count(538) == 538
+    assert _count(None) == 0
+    assert _date("2026-04-01") == date(2026, 4, 1)
+    assert _date(None) is None
 
 
 def test_openapi_exposes_the_chat_event_contract(client: TestClient) -> None:

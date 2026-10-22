@@ -1,8 +1,7 @@
 # FinQon.ai
 
 Ask questions about your bank statement in plain English and get an answer, the SQL that
-produced it, and the rows behind it. This repository is the **API only**; the React UI comes
-after the API is accepted (see [Frontend](#frontend)).
+produced it, and the rows behind it. The React UI is in `frontend/` (see [Frontend](#frontend)).
 
 It is a text-to-SQL agent on Neon Postgres, written by hand: a FastAPI service, a tool loop
 of about 500 lines, a SQL guard built on `sqlglot`, a read-only database role, and
@@ -13,7 +12,8 @@ LlamaIndex, PydanticAI, Redis, or Postgres container.
 
 | Part | State |
 | --- | --- |
-| API, auth, chat (SSE), conversations | Built |
+| API, auth, chat (SSE), conversations, statement summary | Built |
+| React UI (chat desk, evidence charts, sign-in) | Built |
 | Unit tests (guard, grounding, agent loop, API contract, scoring, seed data) | Pass, need no database |
 | Integration tests (RLS, roles, auth flows, chat authorization, views) | Passed against a local Postgres 16. Against Neon, `test_auth`, `test_row_level_security` and `test_database_contract` passed (49 passed). The chat-authorization and CLI tests were reworked to mint seed-user tokens and have **not been re-run on Neon yet** |
 | Real model calls (Gemini) | Made through the running API during manual checks. Every automated test still uses a scripted model |
@@ -211,17 +211,22 @@ turn's SQL and summary.
 ```
 status        stage: thinking | querying | summarizing
 sql           sql, purpose
-table         columns[{name,type}], rows, truncated
+table         columns[{name,type}], rows, truncated, elapsed_ms
 chart         kind: bar | pie | line | none, x, y
 clarification question, options (at most 3)
 token         text
-done          message_id, conversation_id, usage
+done          message_id, conversation_id, usage, status (answered | clarification | refused)
 error         code, message
 ```
 
 `GET /api/v1/conversations` lists your conversations and
-`GET /api/v1/conversations/{id}` returns one with its messages. Someone else's conversation
-and one that does not exist return the same `404`.
+`GET /api/v1/conversations/{id}` returns one with its messages. `PATCH` renames a chat
+(`title`) or pins it (`pinned`); pinned chats stay at the top of the list.
+`DELETE` removes the chat and its messages. Someone else's conversation
+and one that does not exist return the same `404`. `GET /api/v1/statement` returns the
+signed-in user's transaction count and the first and last transaction dates. Result rows are
+not stored with the conversation, so a refreshed page shows the questions and answers, and
+the chart fills in again on the next question.
 
 ## How row-level security is set from the token
 
@@ -338,6 +343,25 @@ Layering, trust boundaries, probes and known gaps: [docs/architecture.md](docs/a
 
 ## Frontend
 
-There is none yet. It is built after this API is accepted, against the `ChatEvent` schema in
-`/openapi.json`. No CSV or PDF upload, budgets, anomaly detection, or pgvector are included
-by design.
+The UI is a Vite + React + TypeScript app in `frontend/`. It signs in against `/api/v1/auth`,
+streams `POST /api/v1/chat`, and plots `table.rows` (never numbers copied out of the answer
+text). Event types in `frontend/src/types/events.ts` are generated from `frontend/openapi.json`;
+each event is checked with Zod before the chat reducer sees it.
+
+```bash
+cd frontend
+npm install
+npm run dev          # http://localhost:5173, proxied to the API on :8000
+```
+
+`npm run typecheck` and `npm test` cover the stream reducer. With Docker, `docker compose up --build`
+also starts the UI on port 5173 and proxies `/api` to the API container. Regenerate the
+contract after an API change with the backend virtualenv:
+
+```bash
+cd backend
+.venv/bin/python -c "import json; from finqon.main import create_app; from tests.conftest import ScriptedLLM, unit_settings; app = create_app(unit_settings(), llm=ScriptedLLM([]), require_llm_key=False); open('../frontend/openapi.json','w').write(json.dumps(app.openapi(), indent=2)+'\n')"
+cd ../frontend && npm run generate:api
+```
+
+No CSV or PDF upload, budgets, anomaly detection, or pgvector are included by design.

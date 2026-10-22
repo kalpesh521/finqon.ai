@@ -7,7 +7,7 @@ export function Mark({ className = "h-9 w-9" }: IconProps) {
 export function Wordmark({ className = "" }: { className?: string }) {
     return (
         <span className={className}>
-            Finqon<span className="text-[#2AD7EA]">.ai</span>
+            FinQon<span className="text-[#2AD7EA]">.ai</span>
         </span>
     );
 }

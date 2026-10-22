@@ -18,7 +18,7 @@ function Gate() {
             <div className="grid h-dvh place-items-center bg-canvas">
                 <div className="flex items-center gap-3 text-sm text-muted">
                     <Mark />
-                    Opening Finqon.ai…
+                    Opening FinQon.ai…
                 </div>
             </div>
         );

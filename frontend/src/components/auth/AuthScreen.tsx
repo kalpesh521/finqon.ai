@@ -12,7 +12,7 @@ export function AuthScreen() {
     const [view, setView] = useState<View>("landing");
 
     return (
-        <div className="relative min-h-dvh bg-[#05070F] text-[#F7FAFF] lg:h-dvh lg:overflow-hidden">
+        <div className={view === "landing" ? "relative min-h-dvh bg-[#05070F] text-[#F7FAFF] lg:h-dvh lg:overflow-hidden" : "relative h-svh overflow-x-hidden overflow-y-auto bg-[#05070F] text-[#F7FAFF]"}>
             <button
                 type="button"
                 className="absolute left-5 top-5 z-20 flex items-center gap-3 sm:left-8 sm:top-6"
@@ -41,7 +41,7 @@ function Landing({ onSignIn }: { onSignIn: () => void }) {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.55, ease: "easeOut" }}
                 >
-                    <h1 className="text-[2rem] font-semibold leading-tight tracking-tight md:text-4xl lg:text-5xl">
+                    <h1 className="mb-[30px] text-[2rem] font-semibold leading-tight tracking-tight md:text-4xl lg:text-5xl">
                         Ask your bank statement.
                         <span className="mt-2 block bg-gradient-to-r from-[#F7FAFF] to-[#70E7FF] bg-clip-text text-transparent">
                             See the proof.
@@ -49,7 +49,7 @@ function Landing({ onSignIn }: { onSignIn: () => void }) {
                     </h1>
                     <p className="mt-4 max-w-sm text-base leading-7 text-[#D5DEF2] md:mt-5">
                         Ask spending questions in plain language.{" "}
-                        <span className="font-medium text-[#70E7FF]">Finqon.ai</span> answers from your transactions and shows the SQL, chart, and rows.
+                        <span className="font-medium text-[#70E7FF]">FinQon.ai</span> answers from your transactions and shows the SQL, chart, and rows.
                     </p>
                     <motion.button
                         type="button"
@@ -82,7 +82,7 @@ function Landing({ onSignIn }: { onSignIn: () => void }) {
 
 function SignInStage() {
     return (
-        <main className="relative flex min-h-dvh flex-col items-center overflow-x-hidden overflow-y-auto px-4 pb-6 pt-20 sm:px-6 md:justify-center md:overflow-hidden md:pt-16">
+        <main className="relative flex min-h-full w-full flex-col items-center justify-center px-4 pb-8 pt-14 sm:px-6 sm:pb-10 sm:pt-16">
             <div
                 className="pointer-events-none absolute inset-0"
                 style={{
@@ -90,14 +90,14 @@ function SignInStage() {
                         "radial-gradient(ellipse 70% 45% at 50% 0%, rgba(77,124,255,0.28), transparent 60%), radial-gradient(ellipse 40% 30% at 50% 18%, rgba(112,231,255,0.12), transparent 70%)",
                 }}
             />
-            <div className="relative flex w-full max-w-[420px] flex-col items-center">
-                <h1 className="text-center text-2xl font-semibold leading-tight tracking-tight [@media(min-height:820px)]:text-4xl">
+            <div className="relative flex w-full min-w-0 max-w-[400px] flex-col items-center">
+                <h1 className="w-full px-1 text-center text-base font-semibold leading-snug text-balance sm:text-lg">
                     <span className="bg-gradient-to-r from-[#F7FAFF] via-[#9FD4FF] to-[#70E7FF] bg-clip-text text-transparent">
                         Continue your statement analysis.
                     </span>
-                    <span className="mt-1 block text-[#70E7FF]">Answers with proof.</span>
+                    <span className="mt-0.5 block text-[#70E7FF]">Answers with proof.</span>
                 </h1>
-                <div className="mt-4 w-full [@media(min-height:820px)]:mt-8">
+                <div className="mt-3 w-full min-w-0 sm:mt-4">
                     <AuthCard align="center" />
                 </div>
             </div>

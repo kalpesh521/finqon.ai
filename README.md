@@ -1,459 +1,274 @@
+![FinQon.ai — ask your bank statement in plain English](docs/finqon.ai_banner.png)
+
 # FinQon.ai
 
-Ask questions about your bank statement in plain English and get an answer, the SQL that
-produced it, and the rows behind it. The React UI is in `frontend/` (see [Frontend](#frontend)).
+Plain-English questions over your bank statement.  
+The answer, the SQL, the chart, and the rows — from the same query.
 
-It is a text-to-SQL agent on Neon Postgres, written by hand: a FastAPI service, a tool loop
-of about 500 lines, a SQL guard built on `sqlglot`, a read-only database role, and
-row-level security that keeps each user inside their own rows. No LangChain, LangGraph,
-LlamaIndex, PydanticAI, Redis, or Postgres container.
+[Start](#start) · [Walkthrough](#product-walkthrough) · [Text to SQL](#text-to-sql) · [Statement RAG](#statement-rag) · [Schema](#schema) · [Stack](#stack)
 
-## Status
+---
 
-| Part | State |
-| --- | --- |
-| API, auth, chat (SSE), conversations, statement summary | Built |
-| React UI (chat desk, evidence charts, sign-in) | Built |
-| Unit tests (guard, grounding, agent loop, API contract, scoring, seed data) | Pass, need no database |
-| Integration tests (RLS, roles, auth flows, chat authorization, views) | Passed against a local Postgres 16. Against Neon, `test_auth`, `test_row_level_security` and `test_database_contract` passed (49 passed). The chat-authorization and CLI tests were reworked to mint seed-user tokens and have **not been re-run on Neon yet** |
-| Real model calls (Gemini) | Made through the running API during manual checks. Every automated test still uses a scripted model |
-| Evaluation | Written (29 cases) but **not run**, so there is no pass count yet. See [Evaluation](#evaluation) |
-| Docker images | Written and `docker compose config` validates. **Not built**: no Docker daemon was available |
+You ask a question. A small FastAPI agent writes a `SELECT`, PostgreSQL runs it under a read-only role, and the React desk plots those rows. Numbers in the reply have to come from the result. A second path searches your uploaded statement by meaning, using embeddings stored next to each transaction. 
 
-Nothing above is a claim about answer quality. That is what the eval measures, and it needs
-your model key.
+---
 
-## Uploading statements
+## Start
 
-Attach (paperclip) or drag CSV, XLSX or text-PDF files onto the desk. Each file becomes a
-`ledger.statements` job plus an account named after the file, so the existing views, SQL
-guard and RLS cover it unchanged. The job parses, reconciles running balances (a file that
-does not reconcile is quarantined), classifies (alias table, then keyword rules) and
-imports; the UI polls `GET /api/v1/files`. Re-uploading identical bytes is a no-op.
-Apply it with `alembic upgrade head` (migration `0008`). Not built yet: pgvector semantic
-search, an LLM categorisation fallback, anomaly jobs, scanned-PDF OCR, a durable queue and
-object store (jobs run in-process and the bytes are not kept).
-
-## How it works
-
-```
-client ──Bearer JWT──▶ FastAPI ──▶ ChatService ──▶ agent loop ◀──▶ LLM (OpenAI-compatible)
-                          │                          │
-                  finqon_api role               run_sql_query
-                  (users, chats)                     │
-                                          sqlglot guard (SELECT only, allow-listed views,
-                                          LIMIT ≤ 500)
-                                                     │
-                                          finqon_reader role: read-only transaction,
-                                          5 s timeout, finqon.user_id set ──▶ RLS
-```
-
-- **Tools:** `run_sql_query`, `search_merchants` (`pg_trgm`, for "starbuks"), and
-  `ask_clarification`. The loop is capped at 6 model steps, 3 SQL executions, 2 repairs and
-  30 seconds.
-- **The model only sees summaries.** After a query it receives the columns, the row count,
-  the first 20 rows and min/max/sum of numeric columns, never the full result.
-- **Grounding check.** Every number in the drafted answer must match a value the model was
-  shown (or appear in the question or the SQL). If one does not, the model regenerates once;
-  if it still fails, the user gets a fixed refusal instead of an unverified figure.
-- **Dates are computed in Python,** not guessed: the prompt carries today's date and the
-  resolved ranges for "last month", "last 30 days", "this quarter" and so on.
-- **Streaming:** a turn is `status`, `sql`, `table`, `chart`, then `token` events and a final
-  `done`. The `chart` event names a kind and columns only; the UI plots `table.rows`.
-
-## Quick start
-
-You need Python 3.12+, a Neon project, `psql`, and (for real answers) a Gemini API key.
+You need Python 3.12, Node 20+, a Neon Postgres project (pgvector enabled), and an OpenAI-compatible API key.
 
 ```bash
-cp .env.example .env            # fill it in; see "Environment" below
+cp .env.example .env     # fill the four database URLs, JWT secret, and model key
+```
 
+Use Neon **direct (session)** URLs, not the transaction pooler. `set_config` for row-level security has to stay on the same connection as the query.
+
+### Backend
+
+```bash
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-python -m finqon.db.bootstrap_roles      # create the three roles (uses the Neon owner URL)
-alembic upgrade head                     # schemas, tables, RLS, views, grants
-python ../dataset/load_ledger.py         # two seed users and their statements
+python -m finqon.db.bootstrap_roles   # finqon_api, finqon_reader, finqon_loader
+alembic upgrade head                  # schemas, RLS, views, uploads, embeddings
+python ../dataset/load_ledger.py      # two seed users
 
 uvicorn finqon.main:app_factory --factory --reload
 ```
 
-The API is on `http://localhost:8000`, with interactive docs at `/docs` and the full event
-contract in `/openapi.json`. `GET /health` returns `{"status":"ok"}`.
+API at `http://localhost:8000`. Docs at `/docs`. `GET /health` returns `{"status":"ok"}`.
 
-With Docker (the database stays on Neon; there is no Postgres service):
+### Frontend
+
+The API must already be on port 8000. Vite proxies `/api` and `/health`.
 
 ```bash
-docker compose --profile setup run --rm setup     # once: roles, migrations, seed
-docker compose up --build api
+cd frontend
+npm install
+npm run dev          # http://localhost:5173
 ```
 
-### Try the exit check without a model
+### Docker
+
+The database stays on Neon. Compose runs the API and the built UI.
+
+```bash
+docker compose --profile setup run --rm setup    # once: roles, migrations, seed
+docker compose up --build api web                # API :8000, UI :5173
+```
+
+
+| Service | What it does                                                                       |
+| ------- | ---------------------------------------------------------------------------------- |
+| `api`   | Production image. Read-only filesystem, no extra capabilities.                     |
+| `web`   | Built React app. Proxies `/api` to the API container.                              |
+| `setup` | One-off. Needs `FINQON_ADMIN_DATABASE_URL`. Safe to run again.                     |
+| `eval`  | `docker compose --profile eval run --rm eval` writes `eval/reports/latest.md`.     |
+| `test`  | `docker compose --profile test run --rm test` runs pytest, including the database. |
+
+
+### First question
+
+Sign in as the seed user (`kalpeshpawar@gmail.com`, password is `FINQON_SEED_PASSWORD`) and ask:
+
+> How much did I spend on eating out last month?
+
+Or skip the browser:
 
 ```bash
 finqon-cli reference --user kalpeshpawar@gmail.com
 finqon-cli ask "How much did I spend on eating out last month?" --user kalpeshpawar@gmail.com
 ```
 
-`reference` runs the known-good dining query directly and needs no model key; `ask` runs
-the full agent (needs `FINQON_LLM_API_KEY`) and prints the SQL, the table and the answer, so
-the two figures can be compared. On 21 October 2026, "last month" is September 2026, and the
-reference figure is ₹32,862.95 for the primary user and ₹5,580.32 for the isolation user.
-"Last month" moves with the calendar, so on another date the figures change; the seed
-transactions do not.
+`reference` runs the known-good query and needs no model key. `ask` runs the full agent. “Last month” is resolved in `Asia/Kolkata`, so the rupee figure moves with the calendar. The seed rows do not.
+
+---
+
+## Product walkthrough
+
+1. **Land.** Dark full-viewport page. The call to action opens the auth card.
+2. **Sign in or register.** Same card, same fields. Access token stays in memory. Refresh token is stored and rotated on each use.
+3. **Open the desk.** History on the left, the thread in the middle, evidence on the right.
+4. **Ask.** Status steps run `thinking → querying → summarizing`. Tokens stream only after the answer is checked.
+5. **Read the evidence.** Show SQL, switch Bar / Pie / Line, scroll the table. The chart is plotted from `table.rows`, never from the sentence.
+6. **Follow up.** “What about the month before?” stays in the same conversation. The model sees the previous SQL and a one-line summary, not the old rows.
+7. **Upload a statement.** Paperclip or drop a CSV, XLSX, or text PDF. The job parses, reconciles, classifies, embeds, and imports. Then ask about that file the same way.
+
+Under 1120px the history becomes a drawer. Under 800px the evidence panel follows the answer.
+
+---
+
+## Text to SQL
+
+```
+Browser
+  │  POST /api/v1/chat   Bearer JWT
+  ▼
+FastAPI  ──►  ChatService  ──►  agent loop  ◄──►  LLM
+                                    │
+                                    │  run_sql_query
+                                    ▼
+                              sqlglot guard
+                              SELECT only · 3 views · LIMIT ≤ 500
+                                    │
+                                    ▼
+                              finqon_reader
+                              read-only · 5s timeout · finqon.user_id
+                                    │
+                                    ▼
+                              Neon Postgres + RLS
+                                    │
+                                    ▼
+                         SSE: status · sql · table · chart · token · done
+```
+
+The loop is capped at 6 model steps, 3 SQL runs, 2 repairs, and 30 seconds.
+
+
+| Tool                  | Job                                                                               |
+| --------------------- | --------------------------------------------------------------------------------- |
+| `run_sql_query`       | One guarded `SELECT`. Returns columns, a row sample, and numeric min / max / sum. |
+| `search_transactions` | Semantic search over uploaded and seeded narrations. See below.                   |
+| `search_merchants`    | Typo-tolerant merchant match (`pg_trgm`) limited to merchants this user has used. |
+| `ask_clarification`   | At most three options when the question is ambiguous. No SQL is run.              |
+
+
+The model never receives the full result. After a query it sees the columns, the row count, the first 20 rows, and aggregates. Every number and ISO date in the draft must appear in that payload, the question, or the SQL. One mismatch triggers a single rewrite. A second mismatch becomes a fixed refusal.
+
+Dates such as “last month” and “this quarter” are computed in Python and placed in the prompt. The model does not invent the calendar.
+
+A destructive request has to pass five independent layers: the prompt, the sqlglot guard, the `finqon_reader` role (`NOSUPERUSER NOBYPASSRLS`), forced row-level security, and the grounding check. The guard rejects `set_config`, `current_setting`, and `pg_*`, so model SQL cannot read or change who the user is.
+
+---
+
+## Statement RAG
+
+Upload is not a separate chat. A file becomes rows in the same ledger the SQL agent already reads, plus a vector on each narration.
+
+```
+CSV · XLSX · text PDF
+        │
+        ▼
+  hash + validate          10 MB · 5 files · magic-byte check
+        │
+        ▼
+  ledger.statements        queued job, polled by GET /api/v1/files
+        │
+        ├─ parse
+        ├─ reconcile running balance     mismatch → quarantine, nothing imported
+        ├─ classify                      alias table, then keyword rules
+        ├─ mask PII in the narration
+        ├─ embed raw_description         gemini-embedding-001 · 768 dims
+        └─ insert transactions           RLS applies immediately
+                │
+                ▼
+        search_transactions
+        pgvector  ⊕  pg_trgm
+        fused with reciprocal rank fusion
+                │
+                ▼
+        same evidence panel as a SQL answer
+```
+
+Re-uploading the same bytes returns the existing job. Embeddings that were missed at import can be filled later:
+
+```bash
+finqon-cli embed-backfill
+```
+
+If the embedding call fails during a question, lexical search still runs. The turn is not failed.
+
+Bytes stay in memory for the job. There is no object store and no scanned-PDF OCR.
+
+---
+
+## Data and schema decisions
+
+Synthetic statements, fixed seed `20260101`, window **1 April – 21 October 2026**. The primary user has **538 transactions** (six months, 500+). A second user exists only so row-level security can be tested. Load path: `generate_ledger.py` → `normalize_descriptions.py` → `load_ledger.py`.
+
+
+| Decision                    | What we did                                                                                                                                                                                            |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Debits and credits          | `amount` is always positive. `direction` is `debit` or `credit`. No signed amount on the raw row.                                                                                                      |
+| Spend                       | A debit that is not a transfer, minus linked refunds. Salary and other credits are not spend.                                                                                                          |
+| Refunds                     | A credit with `refund_of_txn_id` pointing at the purchase. It is **negative spend on the day it arrives**, not back-dated onto the purchase month.                                                     |
+| Transfers                   | Kept on `reporting.transactions` (so “sent home” is answerable) and excluded from `reporting.spend`.                                                                                                   |
+| Messy narrations            | Raw text stays in `raw_description` (`UPI-SWIGGY…`, NEFT, IMPS, card strings).                                                                                                                         |
+| Clean merchant and category | Lookup table `ledger.merchant_aliases`, then keyword rules. Optional `--use-llm` only for rows that still match nothing, and the answer is written back as an alias.                                   |
+| Unknown merchants           | Become `Unknown Merchant` / `Uncategorised`. Rankings leave them out. We do not guess.                                                                                                                 |
+| What the model reads        | Three views, not the base tables: `reporting.transactions`, `reporting.spend`, `reporting.monthly_category_spend`. They already join merchant and category and expose `fy`, `fy_quarter`, and `month`. |
+| Comments                    | Every view and column has a Postgres `COMMENT`. The prompt is built from those comments.                                                                                                               |
+| Calendar                    | Financial year 1 April–31 March. Dates in `Asia/Kolkata`.                                                                                                                                              |
+| Recurring payments          | Salary, EMI, rent-like transfers, fees, and subscriptions are real rows on fixed days, not a separate table.                                                                                           |
+
+
+Five schemas: `identity`, `ledger`, `conversation`, `operations`, `reporting`. Alembic is the only way they change. The signed column the model should use for “how much did I spend?” is `spend_amount`.
+
+---
+
+## Stack
+
+
+| Layer      | Choice                                                              |
+| ---------- | ------------------------------------------------------------------- |
+| Frontend   | React, TypeScript, Vite, Tailwind CSS                               |
+| Backend    | Python, FastAPI                                                     |
+| Database   | PostgreSQL on Neon, Alembic                                         |
+| LLM        | Gemini (`gemini-flash-latest`) through the OpenAI SDK               |
+| Agent      | Hand-rolled tool loop.                                              |
+| SQL safety | sqlglot guard, read-only role, row-level security                   |
+| Search     | pgvector and `pg_trgm`                                              |
+| Packaging  | Docker Compose for the API and the frontend. Database stays on Neon |
+
+
+---
 
 ## Environment
 
-Settings come only from `pydantic-settings` with the `FINQON_` prefix, read from the
-environment or `.env` at the repository root. `.env` is gitignored; commit only
-`.env.example`. A missing required value stops the API at startup, naming the variable but
-never printing a value.
+Settings use the `FINQON_` prefix and are read from the environment or the root `.env`. A missing required value stops startup and names the variable. It never prints the value.
 
-| Variable | Needed by | Notes |
-| --- | --- | --- |
-| `FINQON_API_DATABASE_URL` | API | Role `finqon_api`. Neon **direct** (session) URL, not the pooler |
-| `FINQON_READER_DATABASE_URL` | API | Role `finqon_reader`. Runs model-written SQL |
-| `FINQON_LOADER_DATABASE_URL` | seed loader | Role `finqon_loader` |
-| `FINQON_ADMIN_DATABASE_URL` | setup only | Neon owner. Used by role bootstrap and Alembic. The running API never needs it |
-| `FINQON_SEED_PASSWORD` | seed loader, tests | Password for the two seed users |
-| `FINQON_JWT_SECRET` | API | At least 32 characters |
-| `FINQON_LLM_API_KEY` | API, `ask`, eval | Any OpenAI-compatible endpoint |
-| `FINQON_LLM_BASE_URL`, `FINQON_LLM_MODEL` | optional | Default to Gemini's OpenAI-compatible endpoint and `gemini-flash-latest` |
-| `FINQON_JWT_ACCESS_TTL_MINUTES`, `FINQON_JWT_REFRESH_TTL_DAYS`, `FINQON_JWT_ISSUER` | optional | 15, 14, `finqon.ai` |
-| `FINQON_CORS_ORIGINS` | optional | Comma-separated. Default `http://localhost:5173` |
-| `FINQON_TIMEZONE` | optional | Default `Asia/Kolkata` |
 
-Passwords for the three application roles are taken from the passwords inside their URLs,
-so there is nothing else to configure. Connection options such as `sslmode` and
-`channel_binding` in a Neon URL are handled for both asyncpg and SQLAlchemy.
+| Variable                     | Who needs it                                              |
+| ---------------------------- | --------------------------------------------------------- |
+| `FINQON_API_DATABASE_URL`    | API role `finqon_api`                                     |
+| `FINQON_READER_DATABASE_URL` | Role `finqon_reader`, model SQL                           |
+| `FINQON_LOADER_DATABASE_URL` | Seed loader                                               |
+| `FINQON_ADMIN_DATABASE_URL`  | Bootstrap and Alembic only                                |
+| `FINQON_SEED_PASSWORD`       | The two seed users                                        |
+| `FINQON_JWT_SECRET`          | At least 32 characters                                    |
+| `FINQON_LLM_API_KEY`         | Real answers and the eval                                 |
+| `FINQON_LLM_BASE_URL`        | Optional. Defaults to Gemini’s OpenAI-compatible endpoint |
+| `FINQON_LLM_MODEL`           | Optional. Defaults to `gemini-flash-latest`               |
+| `FINQON_CORS_ORIGINS`        | Optional. Default `http://localhost:5173`                 |
+| `FINQON_TIMEZONE`            | Optional. Default `Asia/Kolkata`                          |
 
-## Schema decisions
 
-Five schemas keep ownership obvious: `identity` (users, refresh tokens), `ledger`
-(categories, merchants, aliases, accounts, transactions), `conversation` (conversations,
-messages), `operations` (model usage), and `reporting` (the only thing the model may read).
-Alembic is the only way the schema changes.
+---
 
-- **The model reads views, not tables.** `reporting.transactions`, `reporting.spend` and
-  `reporting.monthly_category_spend` already join merchants and categories, expose
-  `fy`, `fy_quarter` and `month`, and carry a `COMMENT` on the view and on every column. The
-  prompt is built from those comments (read from the database catalog on first use and cached
-  for an hour), so the documentation the model sees is the documentation in the database.
-- **`amount` is unsigned** and `direction` (`debit`/`credit`) carries the sign, the way a
-  bank statement does. The one signed column is `spend_amount`, described below.
-- **Raw descriptions are kept.** Messy strings stay in `raw_description`; the model gets the
-  cleaned merchant and category. Merchants no alias matches become `Unknown Merchant` rather
-  than a guess, and rankings exclude them.
-- **Financial year** runs 1 April to 31 March (`FY2026-27`), quarters start in April, July,
-  October and January, and every date is read in `Asia/Kolkata`.
-- **Merchant matching** uses `pg_trgm`, restricted to merchants the signed-in user has
-  actually transacted with.
-- **Conversations store** the question, the SQL, a one-line result summary, the answer and
-  token counts. Result sets are never stored, so history sent back to the model contains no
-  rows.
-
-## What "spend" means
-
-> Spend is every debit that is not a transfer, minus linked refunds. A refund is negative
-> spend on the day it arrives. Salary and other credits are not spend, and transfers (for
-> example money sent to parents) are not spend.
-
-This is `reporting.spend`, and `spend_amount` is its signed amount. Consequences worth
-knowing:
-
-- Refunds reduce the month they **arrive** in, not the month of the purchase. A month can
-  therefore be lower than the sum of its purchases.
-- A transfer of ₹15,000 to parents does not appear in spend, but it does appear in
-  `reporting.transactions`, so "how much did I send home?" is answerable.
-- The evaluation's reference SQL uses exactly this definition. See
-  [dataset/README.md](dataset/README.md) for the seed data.
-
-## Authentication
-
-Register, log in, and use the access token. Refresh tokens rotate: each use returns a new
-pair and revokes the old one. Replaying a used token revokes the whole family, because the
-original may have been stolen. Logout is idempotent. Passwords are hashed with argon2id,
-refresh tokens are stored only as SHA-256 hashes, and register and login are rate limited in
-process (10 attempts per minute by default, per address and per email).
+## Check your work
 
 ```bash
-BASE=http://localhost:8000/api/v1
+make check          # lint, types, unit tests
+make test           # integration tests too, when the database URLs are set
 
-curl -s $BASE/auth/register -H 'content-type: application/json' \
-  -d '{"email":"me@example.com","password":"a long passphrase"}'
-
-TOKENS=$(curl -s $BASE/auth/login -H 'content-type: application/json' \
-  -d '{"email":"me@example.com","password":"a long passphrase"}')
-ACCESS=$(echo "$TOKENS"  | jq -r .access_token)
-REFRESH=$(echo "$TOKENS" | jq -r .refresh_token)
-
-curl -s $BASE/auth/me -H "authorization: Bearer $ACCESS"
-
-# Rotate: use the NEW refresh token from this response from now on.
-curl -s $BASE/auth/refresh -H 'content-type: application/json' \
-  -d "{\"refresh_token\":\"$REFRESH\"}"
-
-curl -s -X POST $BASE/auth/logout -H 'content-type: application/json' \
-  -d "{\"refresh_token\":\"$REFRESH\"}"        # 204
+python eval/run_eval.py --reference-only    # reference SQL, no model
+python eval/run_eval.py                     # full set → eval/reports/latest.md
 ```
 
-Application errors are `{"code": "...", "message": "..."}` with stable codes such as
-`invalid_credentials`, `refresh_token_reused`, `refresh_token_expired` and `rate_limited`
-(which also sets `Retry-After`). Malformed requests return FastAPI's standard `422` body.
+The eval compares result values, not SQL text. Numbers must match within ₹0.01. Failures stay in the report. The fix belongs in the views, the date preamble, or the examples, not in the question text.
 
-## Chat
+`GET /health` is liveness. `GET /health/ready` checks both database pools and returns 503 if either is down.
 
-```bash
-# Seed users have their own passwords (FINQON_SEED_PASSWORD).
-ACCESS=$(curl -s $BASE/auth/login -H 'content-type: application/json' \
-  -d '{"email":"kalpeshpawar@gmail.com","password":"'"$FINQON_SEED_PASSWORD"'"}' \
-  | jq -r .access_token)
+---
 
-curl -N $BASE/chat -H "authorization: Bearer $ACCESS" -H 'content-type: application/json' \
-  -d '{"message":"Give me a category-wise spending breakdown for the last 3 months."}'
-```
+## Also worth knowing
 
-The response is Server-Sent Events (`event: <type>` / `data: <json>`) and carries an
-`X-Conversation-Id` header. Pass `conversation_id` in the next request to continue; "What
-about the month before?" only makes sense there, because the model is given the previous
-turn's SQL and summary.
+- **Answers are verified before they stream.** Model output is buffered, grounded, then emitted as `token` events. Unchecked figures never reach the screen.
+- **History does not store rows.** A refresh shows the question and the answer. The chart returns on the next question in that chat.
+- **Refresh tokens are families.** Reuse of an old token revokes the whole family. Logout is idempotent.
+- **Register and login are rate limited in process** (10 attempts per minute). One API instance is the supported shape. Several replicas need a shared limiter, which this project does not add.
+- **PII in narrations is masked on import** before the text is stored, embedded, or shown to the model.
+- **Seed data is synthetic** and generated from a fixed random seed. Do not point this at a real statement in a shared environment without reviewing the privacy path.
+- **Deeper design notes** live in [docs/architecture.md](docs/architecture.md). The seed ledger is described in [dataset/README.md](dataset/README.md).
 
-```
-status        stage: thinking | querying | summarizing
-sql           sql, purpose
-table         columns[{name,type}], rows, truncated, elapsed_ms
-chart         kind: bar | pie | line | none, x, y
-clarification question, options (at most 3)
-token         text
-done          message_id, conversation_id, usage, status (answered | clarification | refused)
-error         code, message
-```
-
-`GET /api/v1/conversations` lists your conversations and
-`GET /api/v1/conversations/{id}` returns one with its messages. `PATCH` renames a chat
-(`title`) or pins it (`pinned`); pinned chats stay at the top of the list.
-`DELETE` removes the chat and its messages. Someone else's conversation
-and one that does not exist return the same `404`. `GET /api/v1/statement` returns the
-signed-in user's transaction count and the first and last transaction dates. Result rows are
-not stored with the conversation, so a refreshed page shows the questions and answers, and
-the chart fills in again on the next question.
-
-## How row-level security is set from the token
-
-Isolation does not depend on the model writing `WHERE user_id = ...`. The prompt even says
-not to.
-
-1. The bearer token is verified (signature, expiry, issuer). Its `sub` is the user id; no
-   database lookup decides who you are.
-2. Every database transaction that touches user data begins with
-   `SELECT set_config('finqon.user_id', <id>, true)`. The third argument makes it
-   transaction-local, so a pooled connection cannot carry one user's id into the next request.
-   The API role does this through `Database.user_scope(user_id)`; the reader does it inside a
-   read-only transaction in `QueryExecutor`.
-3. The policies on `ledger.accounts`, `ledger.transactions`, `conversation.conversations` and
-   `conversation.messages` compare rows to `NULLIF(current_setting('finqon.user_id', true), '')::uuid`.
-   RLS is **enabled and forced**, and the views are `security_invoker = on`, so they run with
-   the caller's rights and inherit the policies.
-4. If the setting is missing the policy yields no rows. Forgetting to set it fails closed.
-
-The guard also rejects `set_config`, `current_setting` and `pg_*` functions, so model-written
-SQL cannot change or even read the setting.
-
-## Safety layers
-
-A request to delete data, an injection in a transaction description, and a hand-written
-`DROP TABLE` each have to get past several independent layers:
-
-1. **Prompt:** descriptions are data; refuse writes. A suggestion, and the weakest layer.
-2. **Guard:** one statement, a root `SELECT`/`UNION`, no write, DDL, `COPY`, `INTO`, `LOCK` or
-   `SET` nodes, only the three reporting views (plus the query's own CTEs), a function
-   deny-list, and `LIMIT` rewritten to at most 500. Parsed with `sqlglot` in the Postgres
-   dialect, never matched with regexes.
-3. **Database role:** `finqon_reader` is `NOSUPERUSER NOBYPASSRLS`, defaults to read-only
-   transactions, has a statement timeout and a small connection limit, and has no access to
-   `identity` or `conversation`.
-4. **RLS:** even a query that got through can only see its own user's rows.
-5. **Grounding:** no number reaches the user unless it came from a tool result.
-
-## Testing
-
-```bash
-make check                   # lint, types, unit tests (what CI runs)
-make test                    # everything; integration tests skip without a database
-# or: cd backend && pytest tests/unit   |   pytest tests/integration
-```
-
-Integration tests are marked `integration` and need the three role URLs, the seed users and
-`FINQON_JWT_SECRET` (and `FINQON_SEED_PASSWORD` for the seed-user tests). They use the real
-application roles, never the owner, so a pass means the policy holds for the app. They cover:
-
-- **Row-level security and roles** (`tests/integration/test_row_level_security.py`): per-user spend equals a
-  recomputation from the CSVs; asking for another user's rows by id returns nothing; no user
-  set means no rows; the reader cannot write, read `identity`, or run DDL; conversations are
-  invisible across users.
-- **Auth** (`test_auth.py`): duplicate email, wrong password and unknown email being
-  indistinguishable, rotation and reuse revocation, expiry, logout, rate limiting, secrets
-  stored hashed and absent from logs.
-- **Chat** (`test_chat_authorization.py`): the SSE sequence, per-user tables, history and
-  follow-ups, cross-user conversation `404`s with no model call made, and seven
-  delete/drop/update/copy/sleep attempts that leave the ledger unchanged.
-- **Views** (`test_database_contract.py`): every view and column is documented, the spend
-  rules hold, the financial-year labels are right, and every few-shot example runs on the
-  seeded data.
-
-Lint with Ruff, from `backend/`:
-
-```bash
-ruff check . ../dataset ../eval && mypy   # or: make lint typecheck
-```
-
-## Evaluation
-
-`eval/questions.yaml` holds 29 cases, each judged by **result values, not SQL text**: the
-runner executes a reference query as `finqon_reader` for the seed user, runs the agent, and
-compares the rows (numbers within ₹0.01, order ignored unless the question is a ranking).
-It covers the six questions from the brief, "What about the month before?" and "Break that
-down by merchant", ambiguous questions that should be clarified, questions a bank statement
-cannot answer, and attacks, including the seeded injection row that must be listed as an
-ordinary transaction.
-
-```bash
-python eval/run_eval.py --reference-only   # validate the reference SQL; no model needed
-python eval/run_eval.py                    # full run; writes eval/reports/latest.md
-```
-
-**Latest result: not run yet.** It needs `FINQON_LLM_API_KEY`. What has been checked without
-a model is that all 21 value cases' reference SQL executes on the seed data, that the case
-file meets the spec (at least 20 cases, every tag, the required questions), and that the
-scoring rules behave. After a run, the report at [eval/reports/latest.md](eval/reports/latest.md)
-lists every case with its mismatch, latency and tokens. Failures are reported, not retried
-or hidden; if cases fail, the fix is to the views, the date preamble or the few-shot
-examples, never to the question text.
-
-## Deviations from the brief, and why
-
-- **The reader can `SELECT` the base ledger tables.** The brief asks for views with
-  `security_invoker = on` *and* a reader with no base-table privileges. Postgres cannot do
-  both: an invoker view runs with the caller's rights, so the caller needs the underlying
-  access. I kept `security_invoker` and granted the reader `SELECT` on the four base tables
-  it needs. RLS still limits it to the user's rows, and the guard still limits the model to
-  the three views. The reader cannot see `identity` or `conversation` at all.
-- **Model calls inside the loop are not streamed.** The answer is buffered and verified
-  against the tool results first, then emitted as `token` events. Streaming raw model output
-  would put unverified numbers on screen before the check could reject them.
-- **Two extra variables:** `FINQON_ADMIN_DATABASE_URL` and `FINQON_SEED_PASSWORD`. Creating
-  roles and running migrations needs the Neon owner, and the seed users need a password.
-- **The rate limiter is in process.** It is correct for one API instance; running several
-  needs a shared store, which this project deliberately does not add.
-
-## More
-
-Layering, trust boundaries, probes and known gaps: [docs/architecture.md](docs/architecture.md).
-`GET /health` is liveness; `GET /health/ready` checks both database connections.
-
-## Frontend
-
-The UI is a Vite + React 19 + TypeScript app in `frontend/`. It is one product with three
-screens: a landing page with a 3D finance scene, a sign-in / register card, and the chat
-desk. After login it talks only to `/api/v1`: auth, conversations, the statement summary,
-and the SSE chat stream. Charts are plotted from `table.rows`, never from numbers copied
-out of the assistant's sentence.
-
-### Stack
-
-| Piece | Choice |
-| --- | --- |
-| Bundler | Vite 7, `/api` and `/health` proxied to `http://127.0.0.1:8000` |
-| UI | React 19, TypeScript (`strict`, `noUncheckedIndexedAccess`, `verbatimModuleSyntax`) |
-| Styling | Tailwind CSS 4 (`@tailwindcss/vite`), Poppins and IBM Plex Mono |
-| Motion | Framer Motion (auth card, desk drawers, SQL toggle, status steps) |
-| Landing 3D | Three.js, React Three Fiber, `@react-three/drei` |
-| Charts | Recharts (donut and line) plus custom horizontal bars |
-| Contract | `openapi-typescript` → `src/types/events.ts`; Zod parses every SSE event |
-| Tests | Vitest on the chat reducer and SSE frame parser |
-
-No routing library, no Redux, no chart SDK besides Recharts. Session state lives in
-`AuthProvider` and `useChatStream`.
-
-### Screens
-
-**Landing.** Full-viewport dark canvas (`#05070F`). Copy on the left; a continuously
-animated 3D scene on the right: assistant, two bank cards (Visa and RuPay, different last
-fours), coins, bars, and a donut. Narrow viewports drop to a lighter scene. The CTA opens
-the auth card.
-
-**Sign in / register.** Centered card. Sign-in and register share the same fields so the
-layout does not jump. Access JWT stays in memory; the refresh token is in `localStorage`
-(or session storage when the session is not kept). Concurrent 401s share one refresh
-flight. Logout clears storage and returns to landing.
-
-**Chat desk.** Three columns on a wide screen: conversation history, the thread, and the
-evidence panel.
-
-| Region | What it does |
-| --- | --- |
-| History | Past chats grouped by day (Pinned / Today / Yesterday). Collapse to a 72px rail, or open as a drawer under 1120px. Rename, pin, delete |
-| Thread | User and assistant turns, animated status steps (`thinking` → `querying` → `summarizing`), Show SQL, follow-up chips, Try again |
-| Composer | Question field and Send. Disabled while a turn is streaming |
-| Evidence | Title of the last successful query, total, Bar / Pie / Line, chart, table, truncation note |
-
-Under 800px the evidence panel follows the answer and a “View chart and table” link
-scrolls to it. The composer stays at the bottom. Visible scrollbars are hidden; panels
-still scroll.
-
-The chart event names a kind and column names only. `EvidenceChart` reads values from
-`table.rows`. Empty results show the empty message and no chart frame. Switching Bar /
-Pie / Line reuses the same rows.
-
-### How a turn is rendered
-
-`POST /api/v1/chat` is read as SSE (`src/api/chatStream.ts`). Each frame is parsed, then
-checked with Zod (`src/api/eventSchema.ts`) before `chatReducer` sees it.
-
-```
-status → sql → table → chart → token… → done
-```
-
-`useChatStream` owns conversations, the statement summary, and abort. The active
-conversation id is restored after refresh. Result rows are not stored with the
-conversation, so a reload shows questions and answers; the chart fills in on the next
-question.
-
-### Layout
-
-```
-frontend/src/
-  api/           HTTP client, SSE reader, Zod event schema
-  auth/          AuthProvider, refresh lock, storage
-  components/
-    auth/        landing, AuthCard, FinanceUniverse (R3F)
-    desk/        Desk, HistoryPanel, TurnView, Composer, EvidencePanel, charts, SQL
-  hooks/         useChatStream
-  state/         chatReducer (+ Vitest)
-  types/         generated OpenAPI types
-```
-
-### Run
-
-The API on port 8000 must be up (see [Quick start](#quick-start)). Then:
-
-```bash
-cd frontend
-npm install
-npm run dev          # http://localhost:5173, proxied to the API on :8000
-npm run typecheck
-npm test             # chat reducer and SSE parser
-```
-
-`docker compose up --build api web` serves the built UI on port 5173 and proxies `/api`
-to the API container. After an API contract change, regenerate types with the backend
-virtualenv:
-
-```bash
-cd backend
-.venv/bin/python -c "import json; from finqon.main import create_app; from tests.conftest import ScriptedLLM, unit_settings; app = create_app(unit_settings(), llm=ScriptedLLM([]), require_llm_key=False); open('../frontend/openapi.json','w').write(json.dumps(app.openapi(), indent=2)+'\n')"
-cd ../frontend && npm run generate:api
-```
-
-No CSV or PDF upload, budgets, anomaly detection, or pgvector are included by design.

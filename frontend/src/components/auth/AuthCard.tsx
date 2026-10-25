@@ -90,7 +90,7 @@ export function AuthCard({ align = "start" }: { align?: "start" | "center" }) {
                             value={password}
                             onChange={(event) => setPassword(event.target.value)}
                             className={`${fieldClass} pr-12`}
-                            placeholder={mode === "register" ? "10+ characters" : "Enter password"}
+                            placeholder={mode === "register" ? "Enter at least 10 characters" : "Enter password"}
                             required
                         />
                         <button

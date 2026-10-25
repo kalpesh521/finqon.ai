@@ -62,7 +62,7 @@ export function AuthCard({ align = "start" }: { align?: "start" | "center" }) {
                             value={name}
                             onChange={(event) => setName(event.target.value)}
                             className={fieldClass}
-                            placeholder="Kalpesh Pawar"
+                            placeholder="Your name"
                             required
                         />
                     </label>
@@ -76,7 +76,7 @@ export function AuthCard({ align = "start" }: { align?: "start" | "center" }) {
                         value={email}
                         onChange={(event) => setEmail(event.target.value)}
                         className={fieldClass}
-                        placeholder="you@example.com"
+                        placeholder="Enter your email"
                         required
                     />
                 </label>
@@ -90,7 +90,7 @@ export function AuthCard({ align = "start" }: { align?: "start" | "center" }) {
                             value={password}
                             onChange={(event) => setPassword(event.target.value)}
                             className={`${fieldClass} pr-12`}
-                            placeholder={mode === "register" ? "At least 10 characters" : "Your password"}
+                            placeholder={mode === "register" ? "10+ characters" : "Enter password"}
                             required
                         />
                         <button
@@ -113,6 +113,7 @@ export function AuthCard({ align = "start" }: { align?: "start" | "center" }) {
                             value={confirm}
                             onChange={(event) => setConfirm(event.target.value)}
                             className={fieldClass}
+                            placeholder="Confirm password"
                             required
                         />
                     </label>

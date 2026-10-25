@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from finqon import __version__
-from finqon.api import auth, chat, conversations, health, statement
+from finqon.api import auth, chat, conversations, files, health, statement
 from finqon.api.middleware import RequestContextMiddleware
 from finqon.api.openapi import install_chat_event_schema
 from finqon.core.config import Settings, get_settings
@@ -39,6 +39,9 @@ def create_app(
         try:
             yield
         finally:
+            ingestion = getattr(app.state, "ingestion", None)
+            if ingestion is not None:
+                await ingestion.close()
             await app.state.resources.close()
 
     app = FastAPI(
@@ -61,6 +64,7 @@ def create_app(
     app.include_router(auth.router, prefix="/api/v1")
     app.include_router(chat.router, prefix="/api/v1")
     app.include_router(conversations.router, prefix="/api/v1")
+    app.include_router(files.router, prefix="/api/v1")
     app.include_router(statement.router, prefix="/api/v1")
     install_chat_event_schema(app)
     return app

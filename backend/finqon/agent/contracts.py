@@ -64,6 +64,7 @@ class TurnInput:
     today: date
     history: list[HistoryTurn] = field(default_factory=list)
     previous_sql: str | None = None
+    uploaded_files: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)

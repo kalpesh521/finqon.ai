@@ -13,6 +13,7 @@ from finqon.core.security import decode_access_token
 from finqon.resources import Resources
 from finqon.services.auth import AuthService
 from finqon.services.chat import ChatService
+from finqon.services.ingestion import IngestionService
 
 # ``auto_error=False`` so a missing header is a 401 with our error body, not a 403.
 _bearer = HTTPBearer(auto_error=False, description="Access token from /api/v1/auth/login.")
@@ -59,8 +60,18 @@ def get_chat_service(resources: ResourcesDep) -> ChatService:
     return ChatService(resources)
 
 
+def get_ingestion_service(request: Request, resources: ResourcesDep) -> IngestionService:
+    """One service per process: it owns the background ingestion tasks."""
+    service: IngestionService | None = getattr(request.app.state, "ingestion", None)
+    if service is None:
+        service = IngestionService(resources)
+        request.app.state.ingestion = service
+    return service
+
+
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 ChatServiceDep = Annotated[ChatService, Depends(get_chat_service)]
+IngestionServiceDep = Annotated[IngestionService, Depends(get_ingestion_service)]
 
 
 def client_key(request: Request) -> str:

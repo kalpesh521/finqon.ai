@@ -122,3 +122,54 @@ export function EyeIcon({ className = "h-4 w-4", off = false }: IconProps & { of
         </svg>
     );
 }
+
+export function UploadCloudIcon({ className = "h-8 w-8" }: IconProps) {
+    return (
+        <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+            <path d="M7 18a4 4 0 0 1-.6-7.96A5.5 5.5 0 0 1 17 8.5a4.75 4.75 0 0 1 .5 9.5" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M12 20v-8m0 0-3 3m3-3 3 3" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+    );
+}
+
+export function PaperclipIcon({ className = "h-5 w-5" }: IconProps) {
+    return (
+        <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+            <path d="m20 11-8.2 8.2a5 5 0 0 1-7-7l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4L15 6.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+    );
+}
+
+export function FileIcon({ className = "h-5 w-5" }: IconProps) {
+    return (
+        <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+            <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z" strokeLinejoin="round" />
+            <path d="M14 3v5h5M9 13h6M9 17h4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+    );
+}
+
+export function CheckCircleIcon({ className = "h-5 w-5" }: IconProps) {
+    return (
+        <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" />
+            <path d="m8 12.5 2.8 2.8L16 9.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+    );
+}
+
+export function CloseIcon({ className = "h-4 w-4" }: IconProps) {
+    return (
+        <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+            <path d="m6 6 12 12M18 6 6 18" strokeLinecap="round" />
+        </svg>
+    );
+}
+
+export function RetryIcon({ className = "h-4 w-4" }: IconProps) {
+    return (
+        <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+            <path d="M20 12a8 8 0 1 1-2.6-5.9M20 4v5h-5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+    );
+}

@@ -171,11 +171,27 @@ async def test_reporting_views_run_with_the_callers_privileges(executor: QueryEx
 # ------------------------------------------------------------------ conversations / API role
 
 
-async def test_api_role_cannot_touch_the_ledger(database: Database) -> None:
-    for table in ("ledger.transactions", "ledger.accounts"):
-        with pytest.raises(Exception, match="permission denied"):
-            async with database.session() as session:
-                await session.execute(text(f"SELECT 1 FROM {table} LIMIT 1"))
+async def test_api_role_sees_no_ledger_rows_without_a_user_scope(database: Database) -> None:
+    # Uploads need the API role to write the ledger, but only through ``user_scope``.
+    # Forced RLS must still hide every row, and refuse writes, when no user is set.
+    async with database.session() as session:
+        for table in ("ledger.transactions", "ledger.accounts", "ledger.statements"):
+            count = (await session.execute(text(f"SELECT count(*) FROM {table}"))).scalar_one()
+            assert count == 0, table
+
+
+async def test_api_role_cannot_write_another_users_ledger_rows(
+    database: Database, primary_id: uuid.UUID, isolation_id: uuid.UUID
+) -> None:
+    with pytest.raises(Exception, match="row-level security"):
+        async with database.user_scope(primary_id) as session:
+            await session.execute(
+                text(
+                    "INSERT INTO ledger.accounts (id, user_id, name, account_type) "
+                    "VALUES (nextval('ledger.upload_account_id_seq'), :u, 'x', 'savings')"
+                ),
+                {"u": isolation_id},
+            )
 
 
 async def test_conversations_are_invisible_to_other_users(

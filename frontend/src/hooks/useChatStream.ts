@@ -69,21 +69,20 @@ export function useChatStream() {
         setConversations(list);
     }, [authorizedFetch]);
 
-    useEffect(() => {
-        let cancelled = false;
+    const refreshStatement = useCallback(() => {
         void getStatement(authorizedFetch)
             .then((summary) => {
-                if (cancelled) return;
                 setStatement(summary);
                 setStatementStatus("ready");
             })
             .catch(() => {
-                if (!cancelled) setStatementStatus("unavailable");
+                setStatementStatus((current) => (current === "ready" ? current : "unavailable"));
             });
-        return () => {
-            cancelled = true;
-        };
     }, [authorizedFetch]);
+
+    useEffect(() => {
+        refreshStatement();
+    }, [refreshStatement]);
 
     useEffect(() => {
         const saved = savedAtStart.current;
@@ -240,6 +239,7 @@ export function useChatStream() {
         historyError,
         statement,
         statementStatus,
+        refreshStatement,
         send,
         openConversation,
         newChat,

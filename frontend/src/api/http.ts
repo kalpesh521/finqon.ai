@@ -2,12 +2,14 @@ import { z } from "zod";
 
 import {
     conversationDetailSchema,
+    fileRecordSchema,
     conversationSummarySchema,
     statementSchema,
     tokenPairSchema,
     userSchema,
     type ConversationDetail,
     type ConversationSummary,
+    type FileRecord,
     type StatementSummary,
     type TokenPair,
     type UserResponse,
@@ -116,6 +118,34 @@ export async function getStatement(fetchAuth: AuthorizedFetch): Promise<Statemen
     const response = await fetchAuth("/api/v1/statement");
     if (!response.ok) throw await readError(response);
     return statementSchema.parse(await response.json());
+}
+
+export async function uploadFile(fetchAuth: AuthorizedFetch, file: File): Promise<FileRecord> {
+    const body = new FormData();
+    body.append("files", file, file.name);
+    const response = await fetchAuth("/api/v1/files", { method: "POST", body });
+    if (!response.ok) throw await readError(response);
+    const records = z.array(fileRecordSchema).parse(await response.json());
+    const first = records[0];
+    if (!first) throw new ApiError(502, "http_error", "The upload was not accepted.");
+    return first;
+}
+
+export async function listFiles(fetchAuth: AuthorizedFetch): Promise<FileRecord[]> {
+    const response = await fetchAuth("/api/v1/files");
+    if (!response.ok) throw await readError(response);
+    return z.array(fileRecordSchema).parse(await response.json());
+}
+
+export async function getFile(fetchAuth: AuthorizedFetch, id: string): Promise<FileRecord> {
+    const response = await fetchAuth(`/api/v1/files/${id}`);
+    if (!response.ok) throw await readError(response);
+    return fileRecordSchema.parse(await response.json());
+}
+
+export async function deleteFile(fetchAuth: AuthorizedFetch, id: string): Promise<void> {
+    const response = await fetchAuth(`/api/v1/files/${id}`, { method: "DELETE" });
+    if (!response.ok && response.status !== 204) throw await readError(response);
 }
 
 export function apiUrl(path: string): string {

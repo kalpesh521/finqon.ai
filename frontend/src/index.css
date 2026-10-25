@@ -147,3 +147,23 @@ input:-webkit-autofill:focus {
     background: conic-gradient(from 0deg, transparent 0 74%, #f4fdff 88%, #70e7ff 94%, transparent 100%);
     animation: finqon-logo-ring 3.6s linear infinite;
 }
+
+@keyframes finqon-progress-sheen {
+    from {
+        background-position: 200% 0;
+    }
+    to {
+        background-position: -200% 0;
+    }
+}
+
+.finqon-progress {
+    background-size: 200% 100%;
+    animation: finqon-progress-sheen 1.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .finqon-progress {
+        animation: none;
+    }
+}

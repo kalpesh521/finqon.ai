@@ -1,5 +1,5 @@
 import type { Column, Cell } from "@/api/eventSchema";
-import { formatCell } from "@/lib/format";
+import { formatCell, formatColumnName } from "@/lib/format";
 import { cx } from "@/lib/cx";
 
 type ResultTableProps = {
@@ -20,11 +20,12 @@ export function ResultTable({ columns, rows }: ResultTableProps) {
                                 key={column.name}
                                 scope="col"
                                 className={cx(
-                                    "px-3 py-2 font-semibold",
+                                    "px-3 py-2 font-semibold text-white/60",
                                     column.type === "number" && "text-right",
                                 )}
+                                title={column.name}
                             >
-                                {column.name}
+                                {formatColumnName(column.name)}
                             </th>
                         ))}
                     </tr>

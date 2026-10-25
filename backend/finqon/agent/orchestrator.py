@@ -183,7 +183,9 @@ async def run_turn(turn: TurnInput, deps: AgentDeps) -> AsyncIterator[ChatEvent]
     )
     try:
         catalog = await deps.catalog.get()
-        system_prompt = build_system_prompt(catalog, turn.today, turn.history, turn.previous_sql)
+        system_prompt = build_system_prompt(
+            catalog, turn.today, turn.history, turn.previous_sql, turn.uploaded_files
+        )
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": turn.question},

@@ -48,8 +48,8 @@ function Landing({ onSignIn }: { onSignIn: () => void }) {
                         </span>
                     </h1>
                     <p className="mt-4 max-w-sm text-base leading-7 text-[#D5DEF2] md:mt-5">
-                        Ask spending questions in plain language.{" "}
-                        <span className="font-medium text-[#70E7FF]">FinQon.ai</span> answers from your transactions and shows the SQL, chart, and rows.
+                    Ask questions in plain language. {" "}
+                    <span className="font-medium text-[#70E7FF]">FinQon.ai</span> <br></br> analyzes your financial statements and backs every answer with SQL queries, interactive charts, and actual transaction data. 
                     </p>
                     <motion.button
                         type="button"

@@ -23,6 +23,17 @@ LlamaIndex, PydanticAI, Redis, or Postgres container.
 Nothing above is a claim about answer quality. That is what the eval measures, and it needs
 your model key.
 
+## Uploading statements
+
+Attach (paperclip) or drag CSV, XLSX or text-PDF files onto the desk. Each file becomes a
+`ledger.statements` job plus an account named after the file, so the existing views, SQL
+guard and RLS cover it unchanged. The job parses, reconciles running balances (a file that
+does not reconcile is quarantined), classifies (alias table, then keyword rules) and
+imports; the UI polls `GET /api/v1/files`. Re-uploading identical bytes is a no-op.
+Apply it with `alembic upgrade head` (migration `0008`). Not built yet: pgvector semantic
+search, an LLM categorisation fallback, anomaly jobs, scanned-PDF OCR, a durable queue and
+object store (jobs run in-process and the bytes are not kept).
+
 ## How it works
 
 ```

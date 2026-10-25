@@ -134,6 +134,13 @@ export function axisLabel(label: string): string {
     return /^\d{4}-\d{2}-\d{2}/.test(label) ? formatDay(label) : label;
 }
 
+export function formatColumnName(name: string): string {
+    return name
+        .split("_")
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(" ");
+}
+
 export function statusLabel(stage: "thinking" | "querying" | "summarizing"): string {
     if (stage === "thinking") return "Reading your statement…";
     if (stage === "querying") return "Running the SQL safely…";

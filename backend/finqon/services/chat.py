@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from finqon.agent.contracts import AgentDeps, AgentLimits, ModelUsage, TurnInput, TurnRecord
 from finqon.agent.date_ranges import today_in
@@ -13,6 +13,7 @@ from finqon.agent.orchestrator import run_turn
 from finqon.agent.prompt_builder import HistoryTurn
 from finqon.core.errors import NotFoundError
 from finqon.repositories.conversations import ConversationRepository, NewMessage
+from finqon.repositories.statements import StatementRepository
 from finqon.repositories.usage import UsageRepository
 from finqon.resources import Resources
 from finqon.schemas.chat import ChatEvent, ErrorEvent
@@ -26,6 +27,7 @@ class OpenedConversation:
     id: uuid.UUID
     history: list[HistoryTurn]
     previous_sql: str | None
+    uploaded_files: list[str] = field(default_factory=list)
 
 
 class ChatService:
@@ -43,15 +45,17 @@ class ChatService:
             repo = ConversationRepository(session)
             if conversation_id is None:
                 created = await repo.create(user_id, first_message.strip())
-                return OpenedConversation(created.id, [], None)
+                files = await StatementRepository(session).account_names()
+                return OpenedConversation(created.id, [], None, files)
             if await repo.get(conversation_id) is None:
                 # Not found and not owned look identical, on purpose.
                 raise NotFoundError("Conversation not found.")
             recent = await repo.recent_messages(conversation_id, settings.agent_history_turns)
+            files = await StatementRepository(session).account_names()
 
         history = [HistoryTurn(m.question, m.sql, m.result_summary, m.answer) for m in recent]
         previous_sql = next((m.sql for m in reversed(recent) if m.sql), None)
-        return OpenedConversation(conversation_id, history, previous_sql)
+        return OpenedConversation(conversation_id, history, previous_sql, files)
 
     async def list_conversations(
         self, user_id: uuid.UUID, limit: int, offset: int
@@ -100,6 +104,7 @@ class ChatService:
             today=today_in(settings.tz),
             history=conversation.history,
             previous_sql=conversation.previous_sql,
+            uploaded_files=conversation.uploaded_files,
         )
         deps = AgentDeps(
             llm=self._r.llm,

@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useState } from "react";
 
 import { SqlBlock } from "@/components/desk/SqlBlock";
-import { ChevronIcon, CodeIcon, Mark } from "@/components/icons";
+import { ChevronIcon, CodeIcon, Mark, UploadCloudIcon } from "@/components/icons";
 import { FOLLOW_UPS, STARTERS } from "@/lib/history";
 import { cx } from "@/lib/cx";
 import { formatTime, statusLabel } from "@/lib/format";
@@ -209,37 +209,66 @@ function StatusSteps({ stage }: { stage: Stage }) {
 
 const STARTER_NOTES = ["Last month", "All categories", "Top merchant"] as const;
 
-export function EmptyThread({ name, onSuggest }: { name: string; onSuggest: (text: string) => void }) {
+export function EmptyThread({
+    name,
+    onSuggest,
+    onUpload,
+    uploadedCount,
+}: {
+    name: string;
+    onSuggest: (text: string) => void;
+    onUpload: () => void;
+    uploadedCount: number;
+}) {
     return (
-        <div className="mx-auto flex w-full max-w-2xl flex-col items-center py-6 text-center">
-            <div className="relative mb-6 grid h-28 w-28 place-items-center" aria-hidden="true">
-                <span className="finqon-logo-glow absolute h-16 w-16 rounded-full bg-[#3D8BFF]/45 blur-2xl" />
-                <span className="finqon-logo-float relative grid h-[4.5rem] w-[4.5rem] place-items-center">
+        <div className="mx-auto flex w-full max-w-2xl flex-col items-center py-2 text-center">
+            <div className="relative mb-3 grid h-20 w-20 place-items-center [@media(min-height:760px)]:mb-5 [@media(min-height:760px)]:h-24 [@media(min-height:760px)]:w-24" aria-hidden="true">
+                <span className="finqon-logo-glow absolute h-14 w-14 rounded-full bg-[#3D8BFF]/45 blur-2xl" />
+                <span className="finqon-logo-float relative grid h-16 w-16 place-items-center">
                     <span className="finqon-logo-track absolute inset-0 rounded-full" />
                     <span className="finqon-logo-arc absolute inset-0 rounded-full" />
-                    <Mark className="relative h-14 w-14" />
+                    <Mark className="relative h-12 w-12" />
                 </span>
             </div>
-            <p className="text-lg font-medium text-white/55">Hi, {name}</p>
-            <h2 className="mt-1 text-[1.75rem] font-semibold leading-tight sm:text-4xl">Ask about your money.</h2>
-            <p className="mt-3 max-w-md text-sm font-normal leading-6 text-muted">
-                Ask about spending, merchants, categories, dates, or trends. Every answer can show the SQL, chart, and source rows.
-            </p>
-            <div className="mt-7 grid w-full gap-3 sm:grid-cols-3">
+            <p className="text-base font-medium text-white/55 sm:text-lg">Hello, {name}</p>
+            <h2 className="mt-1 text-[1.6rem] font-semibold leading-tight sm:text-4xl">Turn transactions into insights.</h2>
+            <div className="mt-5 grid w-full gap-2.5 sm:grid-cols-3 sm:gap-3">
                 {STARTERS.map((starter, index) => (
                     <button
                         key={starter}
                         type="button"
                         onClick={() => onSuggest(starter)}
-                        className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-left transition hover:border-[#7EB6FF]/45 hover:bg-white/[0.06]"
+                        className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-left transition hover:border-[#7EB6FF]/45 hover:bg-white/[0.06] sm:py-4"
                     >
                         <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8eb6ff]">
                             {STARTER_NOTES[index]}
                         </span>
-                        <span className="mt-2 block text-sm font-medium leading-6 text-white/90">{starter}</span>
+                        <span className="mt-1.5 block text-sm font-medium leading-6 text-white/90">{starter}</span>
                     </button>
                 ))}
             </div>
+            <button
+                type="button"
+                onClick={onUpload}
+                className="group mt-3 flex w-full items-center gap-3 rounded-2xl border border-dashed border-[#4c8dff]/45 bg-[#4c8dff]/[0.04] px-4 py-3 text-left transition hover:border-[#70E7FF]/70 hover:bg-[#4c8dff]/[0.09] sm:mt-4"
+            >
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#4c8dff]/15 text-[#8eb6ff]">
+                    <UploadCloudIcon className="h-6 w-6" />
+                </span>
+                <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold text-white/90">
+                        {uploadedCount > 0
+                            ? `${uploadedCount} statement${uploadedCount === 1 ? "" : "s"} uploaded. Add more`
+                            : "Upload your statements"}
+                    </span>
+                    <span className="block truncate text-xs text-white/45">
+                        Drag &amp; drop or choose CSV, XLSX, PDF. Then chat with them.
+                    </span>
+                </span>
+                <span className="hidden shrink-0 rounded-full border border-white/10 px-3 py-1 text-xs font-semibold text-[#9ec0ff] transition group-hover:border-[#70E7FF]/50 sm:block">
+                    Choose files
+                </span>
+            </button>
         </div>
     );
 }

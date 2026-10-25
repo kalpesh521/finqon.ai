@@ -3,7 +3,7 @@ import { displayedChart } from "@/state/chatReducer";
 import type { ChatState } from "@/state/chatReducer";
 import { EvidenceChart } from "@/components/desk/EvidenceChart";
 import { ResultTable } from "@/components/desk/ResultTable";
-import { CHART_CHOICES, chartPoints, columnIndex, formatInr, isMoneyColumn, sumValues } from "@/lib/format";
+import { CHART_CHOICES, chartPoints, columnIndex, formatColumnName, formatInr, isMoneyColumn, sumValues } from "@/lib/format";
 import { cx } from "@/lib/cx";
 
 type EvidencePanelProps = {

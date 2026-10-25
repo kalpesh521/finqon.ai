@@ -115,6 +115,24 @@ export const conversationDetailSchema = conversationSummarySchema.extend({
 
 export type TokenPair = z.infer<typeof tokenPairSchema>;
 export type UserResponse = z.infer<typeof userSchema>;
+export const fileRecordSchema = z.object({
+    id: z.string().uuid(),
+    filename: z.string(),
+    size_bytes: z.number().int().nonnegative(),
+    status: z.enum(["queued", "processing", "ready", "failed", "quarantined"]),
+    stage: z.string(),
+    progress: z.number().int().min(0).max(100),
+    rows_imported: z.number().int().nonnegative(),
+    rows_skipped: z.number().int().nonnegative(),
+    date_from: z.string().nullable(),
+    date_to: z.string().nullable(),
+    warnings: z.array(z.string()),
+    error: z.string().nullable(),
+    created_at: z.string(),
+    completed_at: z.string().nullable(),
+});
+
+export type FileRecord = z.infer<typeof fileRecordSchema>;
 export type StatementSummary = z.infer<typeof statementSchema>;
 export type ConversationSummary = z.infer<typeof conversationSummarySchema>;
 export type MessageRecord = z.infer<typeof messageRecordSchema>;

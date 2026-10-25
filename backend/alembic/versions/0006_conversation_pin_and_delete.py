@@ -24,14 +24,10 @@ def upgrade() -> None:
             ADD COLUMN pinned_at timestamptz
         """
     )
-    op.execute(
-        "GRANT DELETE ON conversation.conversations, conversation.messages TO finqon_api"
-    )
+    op.execute("GRANT DELETE ON conversation.conversations, conversation.messages TO finqon_api")
 
 
 def downgrade() -> None:
-    op.execute(
-        "REVOKE DELETE ON conversation.conversations, conversation.messages FROM finqon_api"
-    )
+    op.execute("REVOKE DELETE ON conversation.conversations, conversation.messages FROM finqon_api")
     op.execute("ALTER TABLE conversation.conversations DROP COLUMN pinned_at")
     op.execute("ALTER TABLE conversation.conversations DROP COLUMN pinned")

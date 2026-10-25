@@ -84,7 +84,7 @@ async def test_streaming_flag_uses_the_streaming_path(monkeypatch: pytest.Monkey
         used.append("blocking")
         return ChatResult(content="a")
 
-    async def streaming(messages, tools):
+    async def streaming(messages, tools, on_text=None):
         used.append("streaming")
         return ChatResult(content="b")
 

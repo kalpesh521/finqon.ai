@@ -49,11 +49,14 @@ export const chatEventSchema = z.discriminatedUnion("type", [
         text: z.string(),
     }),
     z.object({
+        type: z.literal("retract"),
+    }),
+    z.object({
         type: z.literal("done"),
         message_id: z.string().uuid(),
         conversation_id: z.string().uuid(),
         usage: usageSchema,
-        status: z.enum(["answered", "clarification", "refused"]).optional().default("answered"),
+        status: z.enum(["answered", "clarification", "refused", "info"]).optional().default("answered"),
     }),
     z.object({
         type: z.literal("error"),
@@ -103,7 +106,7 @@ export const messageRecordSchema = z.object({
     purpose: z.string().nullable(),
     result_summary: z.string().nullable(),
     answer: z.string(),
-    status: z.enum(["answered", "clarification", "refused", "error"]),
+    status: z.enum(["answered", "clarification", "refused", "error", "info"]),
     prompt_tokens: z.number(),
     completion_tokens: z.number(),
     created_at: z.string(),

@@ -32,6 +32,7 @@ class NewTransaction:
     payment_mode: str
     is_recurring: bool
     balance_after: str | None
+    embedding: str | None = None  # pgvector text literal
 
 
 class StatementRepository:
@@ -170,8 +171,9 @@ class StatementRepository:
         insert = text(
             "INSERT INTO ledger.transactions (id, account_id, txn_date, raw_description, "
             "merchant_id, category_id, amount, direction, txn_type, payment_mode, "
-            "is_recurring, balance_after) VALUES (nextval('ledger.upload_txn_id_seq'), :a, "
-            ":d, :r, :m, :c, :amt, :dir, :t, :pm, :rec, :bal)"
+            "is_recurring, balance_after, embedding) "
+            "VALUES (nextval('ledger.upload_txn_id_seq'), :a, :d, :r, :m, :c, :amt, :dir, "
+            ":t, :pm, :rec, :bal, CAST(:emb AS vector))"
         )
         for start in range(0, len(rows), 500):
             await self._s.execute(
@@ -210,3 +212,21 @@ class StatementRepository:
             )
         )
         return [r[0] for r in result.all()]
+
+    # -- embedding backfill ---------------------------------------------------------
+
+    async def unembedded(self, limit: int) -> list[tuple[int, str]]:
+        result = await self._s.execute(
+            text(
+                "SELECT id, raw_description FROM ledger.transactions "
+                "WHERE embedding IS NULL ORDER BY id LIMIT :n"
+            ),
+            {"n": limit},
+        )
+        return [(r.id, r.raw_description) for r in result.all()]
+
+    async def set_embeddings(self, rows: Sequence[tuple[int, str]]) -> None:
+        await self._s.execute(
+            text("UPDATE ledger.transactions SET embedding = CAST(:e AS vector) WHERE id = :i"),
+            [{"i": txn_id, "e": vector} for txn_id, vector in rows],
+        )

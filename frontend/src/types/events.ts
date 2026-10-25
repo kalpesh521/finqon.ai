@@ -185,6 +185,42 @@ export interface paths {
         patch: operations["update_conversation_api_v1_conversations__conversation_id__patch"];
         trace?: never;
     };
+    "/api/v1/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Files */
+        get: operations["list_files_api_v1_files_get"];
+        put?: never;
+        /** Upload Files */
+        post: operations["upload_files_api_v1_files_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/files/{file_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get File */
+        get: operations["get_file_api_v1_files__file_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete File */
+        delete: operations["delete_file_api_v1_files__file_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/statement": {
         parameters: {
             query?: never;
@@ -206,6 +242,14 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** Body_upload_files_api_v1_files_post */
+        Body_upload_files_api_v1_files_post: {
+            /**
+             * Files
+             * @description CSV, XLSX or PDF statements.
+             */
+            files: string[];
+        };
         /** ChatRequest */
         ChatRequest: {
             /**
@@ -279,6 +323,49 @@ export interface components {
             /** Pinned */
             pinned?: boolean | null;
         };
+        /** FileRecord */
+        FileRecord: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Filename */
+            filename: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "processing" | "ready" | "failed" | "quarantined";
+            /**
+             * Stage
+             * @description Human-readable step of the ingestion job.
+             */
+            stage: string;
+            /** Progress */
+            progress: number;
+            /** Rows Imported */
+            rows_imported: number;
+            /** Rows Skipped */
+            rows_skipped: number;
+            /** Date From */
+            date_from: string | null;
+            /** Date To */
+            date_to: string | null;
+            /** Warnings */
+            warnings: string[];
+            /** Error */
+            error: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Completed At */
+            completed_at: string | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -323,7 +410,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "answered" | "clarification" | "refused" | "error";
+            status: "answered" | "clarification" | "refused" | "error" | "info";
             /** Prompt Tokens */
             prompt_tokens: number;
             /** Completion Tokens */
@@ -348,6 +435,8 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+            /** Display Name */
+            display_name?: string | null;
         };
         /** RegisteredUser */
         RegisteredUser: {
@@ -358,6 +447,8 @@ export interface components {
             id: string;
             /** Email */
             email: string;
+            /** Display Name */
+            display_name?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -399,6 +490,8 @@ export interface components {
             id: string;
             /** Email */
             email: string;
+            /** Display Name */
+            display_name?: string | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -472,7 +565,7 @@ export interface components {
              * @default answered
              * @enum {string}
              */
-            status: "answered" | "clarification" | "refused";
+            status: "answered" | "clarification" | "refused" | "info";
         };
         /** ErrorEvent */
         ErrorEvent: {
@@ -485,6 +578,20 @@ export interface components {
             code: string;
             /** Message */
             message: string;
+        };
+        /**
+         * RetractEvent
+         * @description Discard the answer text streamed so far; a verified replacement follows.
+         *
+         *     Live tokens go out before the grounding check finishes. If the check fails, or the
+         *     model turns out to be calling a tool, the client clears what it showed.
+         */
+        RetractEvent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "retract";
         };
         /** SqlEvent */
         SqlEvent: {
@@ -558,7 +665,7 @@ export interface components {
              */
             total_tokens: number;
         };
-        ChatEvent: components["schemas"]["StatusEvent"] | components["schemas"]["SqlEvent"] | components["schemas"]["TableEvent"] | components["schemas"]["ChartEvent"] | components["schemas"]["ClarificationEvent"] | components["schemas"]["TokenEvent"] | components["schemas"]["DoneEvent"] | components["schemas"]["ErrorEvent"];
+        ChatEvent: components["schemas"]["StatusEvent"] | components["schemas"]["SqlEvent"] | components["schemas"]["TableEvent"] | components["schemas"]["ChartEvent"] | components["schemas"]["ClarificationEvent"] | components["schemas"]["TokenEvent"] | components["schemas"]["RetractEvent"] | components["schemas"]["DoneEvent"] | components["schemas"]["ErrorEvent"];
     };
     responses: never;
     parameters: never;
@@ -922,6 +1029,119 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ConversationSummary"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_files_api_v1_files_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileRecord"][];
+                };
+            };
+        };
+    };
+    upload_files_api_v1_files_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_files_api_v1_files_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_file_api_v1_files__file_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_file_api_v1_files__file_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

@@ -17,7 +17,7 @@ export type QueryView = {
     settled: boolean;
 };
 
-export type TurnOutcome = "pending" | "answered" | "clarification" | "refused" | "error";
+export type TurnOutcome = "pending" | "answered" | "clarification" | "refused" | "error" | "info";
 
 export type Turn = {
     localId: string;
@@ -46,7 +46,7 @@ export type HistoryMessage = {
     sql: string | null;
     purpose: string | null;
     answer: string;
-    status: "answered" | "clarification" | "refused" | "error";
+    status: "answered" | "clarification" | "refused" | "error" | "info";
     createdAt: string;
 };
 
@@ -156,6 +156,10 @@ function applyEvent(state: ChatState, event: ChatEvent): ChatState {
             }));
         case "token":
             return mapLast(state, (turn) => ({ ...turn, answer: turn.answer + event.text }));
+        case "retract":
+            // Live text failed the grounding check (or preceded a tool call); a verified
+            // replacement follows.
+            return mapLast(state, (turn) => ({ ...turn, answer: "" }));
         case "done":
             return mapLast(
                 { ...state, conversationId: event.conversation_id, streaming: false },

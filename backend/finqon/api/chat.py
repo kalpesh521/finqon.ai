@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse
 
 from finqon.api.dependencies import ChatServiceDep, CurrentUserDep
 from finqon.schemas.chat import ChatRequest, encode_sse
+from finqon.services.chat import gate_message
 
 router = APIRouter(tags=["chat"])
 
@@ -34,10 +35,12 @@ async def chat(
     body: ChatRequest, user: CurrentUserDep, service: ChatServiceDep
 ) -> StreamingResponse:
     # Resolve the conversation before streaming so ownership problems are real 404s.
-    conversation = await service.open_conversation(user.id, body.conversation_id, body.message)
+    # Sensitive values are masked before anything is stored, titled, or sent to a model.
+    gate = gate_message(body.message)
+    conversation = await service.open_conversation(user.id, body.conversation_id, gate.text)
 
     async def frames() -> AsyncIterator[str]:
-        async for event in service.stream_turn(user.id, conversation, body.message):
+        async for event in service.stream_turn(user.id, conversation, gate.text, gate):
             yield encode_sse(event)
 
     return StreamingResponse(

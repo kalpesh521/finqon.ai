@@ -69,6 +69,7 @@ class ScriptedLLM:
         messages: Sequence[Message],
         tools: Sequence[ToolSpec] | None,
         stream: bool = False,
+        on_text: Any = None,
     ) -> ChatResult:
         self.calls.append([dict(m) for m in messages])
         if not self._replies:
@@ -76,6 +77,11 @@ class ScriptedLLM:
         reply = self._replies.pop(0)
         if isinstance(reply, Exception):
             raise reply
+        if on_text is not None and reply.content and not reply.tool_calls:
+            # Deliver the text in small pieces, like a real stream.
+            words = reply.content.split(" ")
+            for index, word in enumerate(words):
+                await on_text(word + (" " if index < len(words) - 1 else ""))
         return reply
 
 

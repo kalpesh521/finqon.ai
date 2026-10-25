@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 Message = Mapping[str, Any]
 ToolSpec = Mapping[str, Any]
+TextSink = Callable[[str], Awaitable[None]]
 
 _RETRYABLE = (
     openai.RateLimitError,
@@ -89,11 +90,13 @@ class LLMProvider(Protocol):
         messages: Sequence[Message],
         tools: Sequence[ToolSpec] | None,
         stream: bool = False,
+        on_text: TextSink | None = None,
     ) -> ChatResult:
         """Run one completion.
 
         With ``stream=True`` the provider's event stream is consumed and aggregated into
         the same ``ChatResult``; this keeps long generations from hitting read timeouts.
+        ``on_text`` receives each text delta as it arrives (and implies streaming).
         """
         ...
 
@@ -125,19 +128,28 @@ class OpenAICompatibleProvider:
         messages: Sequence[Message],
         tools: Sequence[ToolSpec] | None,
         stream: bool = False,
+        on_text: TextSink | None = None,
     ) -> ChatResult:
         started = time.perf_counter()
         attempt = 0
+        emitted = False
+
+        async def sink(piece: str) -> None:
+            nonlocal emitted
+            emitted = True
+            if on_text is not None:
+                await on_text(piece)
+
         while True:
             try:
                 result = await (
-                    self._complete_streaming(messages, tools)
-                    if stream
+                    self._complete_streaming(messages, tools, sink if on_text else None)
+                    if stream or on_text
                     else self._complete(messages, tools)
                 )
                 return _with_latency(result, started)
             except _RETRYABLE as exc:
-                if attempt >= self._max_retries:
+                if emitted or attempt >= self._max_retries:
                     raise LLMError(
                         "The model is busy or unreachable. Please try again.",
                         code="llm_rate_limited"
@@ -202,7 +214,10 @@ class OpenAICompatibleProvider:
         )
 
     async def _complete_streaming(
-        self, messages: Sequence[Message], tools: Sequence[ToolSpec] | None
+        self,
+        messages: Sequence[Message],
+        tools: Sequence[ToolSpec] | None,
+        on_text: TextSink | None = None,
     ) -> ChatResult:
         params = self._request(messages, tools)
         stream = await self._client.chat.completions.create(
@@ -223,6 +238,8 @@ class OpenAICompatibleProvider:
                 delta = choice.delta
                 if delta.content:
                     parts.append(delta.content)
+                    if on_text is not None:
+                        await on_text(delta.content)
                 for call in delta.tool_calls or []:
                     slot = pending.setdefault(
                         call.index if call.index is not None else len(pending), _PendingCall()

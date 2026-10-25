@@ -77,7 +77,17 @@ class TokenEvent(_Event):
     text: str
 
 
-DoneStatus = Literal["answered", "clarification", "refused"]
+class RetractEvent(_Event):
+    """Discard the answer text streamed so far; a verified replacement follows.
+
+    Live tokens go out before the grounding check finishes. If the check fails, or the
+    model turns out to be calling a tool, the client clears what it showed.
+    """
+
+    type: Literal["retract"] = "retract"
+
+
+DoneStatus = Literal["answered", "clarification", "refused", "info"]
 
 
 class DoneEvent(_Event):
@@ -101,6 +111,7 @@ ChatEvent = Annotated[
     | ChartEvent
     | ClarificationEvent
     | TokenEvent
+    | RetractEvent
     | DoneEvent
     | ErrorEvent,
     Field(discriminator="type"),

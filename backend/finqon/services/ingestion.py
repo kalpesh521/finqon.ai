@@ -17,11 +17,13 @@ import asyncio
 import hashlib
 import logging
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from finqon.core.errors import AppError, NotFoundError
 from finqon.ingest.classify import Alias, Classifier
 from finqon.ingest.parser import SUPPORTED_SUFFIXES, ParseError, parse_statement
+from finqon.llm.embeddings import to_pgvector
+from finqon.privacy.pii import mask_narration
 from finqon.repositories.statements import NewTransaction, StatementRepository
 from finqon.resources import Resources
 from finqon.schemas.files import FileRecord
@@ -157,6 +159,22 @@ class IngestionService:
         except Exception:
             logger.exception("ingestion_fail_write_failed")
 
+    async def _with_embeddings(
+        self, rows: list[NewTransaction], warnings: list[str]
+    ) -> list[NewTransaction]:
+        """Attach description embeddings. Failure is not fatal: search falls back to text."""
+        texts = sorted({r.raw_description for r in rows})
+        try:
+            vectors = await self._r.embedder.embed(texts)
+        except Exception:
+            logger.warning("embedding_failed", exc_info=True)
+            warnings.append(
+                "Semantic search is unavailable for this file; text search still works."
+            )
+            return rows
+        by_text = {t: to_pgvector(v) for t, v in zip(texts, vectors, strict=True)}
+        return [replace(r, embedding=by_text[r.raw_description]) for r in rows]
+
     async def _pipeline(self, user_id: uuid.UUID, statement_id: uuid.UUID, item: Incoming) -> None:
         await self._stage(user_id, statement_id, "Reading file", 15)
         try:
@@ -188,7 +206,10 @@ class IngestionService:
         classifier = Classifier([Alias(*a) for a in raw_aliases], defaults, categories, unknown)
         rows: list[NewTransaction] = []
         for r in parsed.rows:
-            c = classifier.classify(r.description, r.direction)
+            # Card, account, Aadhaar and phone numbers are masked before anything is stored,
+            # embedded or shown to a model.
+            description = mask_narration(r.description)
+            c = classifier.classify(description, r.direction)
             rows.append(
                 NewTransaction(
                     txn_date=r.txn_date,
@@ -204,7 +225,10 @@ class IngestionService:
                 )
             )
 
-        await self._stage(user_id, statement_id, "Saving transactions", 85)
+        await self._stage(user_id, statement_id, "Indexing for search", 78)
+        rows = await self._with_embeddings(rows, parsed.warnings)
+
+        await self._stage(user_id, statement_id, "Saving transactions", 90)
         async with self._r.database.user_scope(user_id) as session:
             repo = StatementRepository(session)
             await repo.import_rows(user_id, statement_id, item.filename, rows)

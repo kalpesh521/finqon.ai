@@ -31,7 +31,8 @@ from finqon.schemas.chat import (
     TableEvent,
     TokenEvent,
 )
-from finqon.services.chat import ChatService
+from finqon.services.chat import ChatService, gate_message
+from finqon.services.embedding_backfill import backfill_embeddings
 
 DEFAULT_QUESTION = "How much did I spend on eating out last month?"
 MAX_PRINTED_ROWS = 20
@@ -41,7 +42,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         settings = get_settings()
-        settings.require_runtime_settings(require_llm=args.command == "ask")
+        settings.require_runtime_settings(require_llm=args.command in ("ask", "embed-backfill"))
     except ConfigurationError as exc:
         print(f"configuration error: {exc}", file=sys.stderr)
         return 2
@@ -66,6 +67,10 @@ def _parser() -> argparse.ArgumentParser:
         "reference", help="Run the reference dining query directly (no model)."
     )
     reference.add_argument("--user", required=True, help="Email of an existing user.")
+
+    commands.add_parser(
+        "embed-backfill", help="Embed transaction descriptions that have no embedding yet."
+    )
     return parser
 
 
@@ -81,6 +86,9 @@ async def _run(args: argparse.Namespace, settings: Settings) -> int:
         settings, llm=_NoModel() if args.command == "reference" else None
     )
     try:
+        if args.command == "embed-backfill":
+            print(f"embedded {await backfill_embeddings(resources)} transactions")
+            return 0
         user_id = await _find_user(resources, args.user)
         if user_id is None:
             print(f"no user with email {args.user!r}", file=sys.stderr)
@@ -111,11 +119,13 @@ async def _ask(
     resources: Resources, user_id: uuid.UUID, question: str, conversation_id: uuid.UUID | None
 ) -> int:
     service = ChatService(resources)
+    gate = gate_message(question)
+    question = gate.text
     conversation = await service.open_conversation(user_id, conversation_id, question)
     exit_code = 0
     answered_inline = False
 
-    async for event in service.stream_turn(user_id, conversation, question):
+    async for event in service.stream_turn(user_id, conversation, question, gate):
         exit_code = max(exit_code, _render(event))
         answered_inline = answered_inline or isinstance(event, TokenEvent)
     if answered_inline:

@@ -53,6 +53,16 @@ class Settings(BaseSettings):
     llm_model: str = "gemini-flash-latest"
     llm_timeout_seconds: float = 30.0
     llm_max_retries: int = 4
+    # Optional separate judge for evaluation rubrics (use another model family). Empty means
+    # the agent's own model judges.
+    judge_base_url: str = ""
+    judge_api_key: SecretStr = SecretStr("")
+    judge_model: str = ""
+    # Embeddings for semantic search (same gateway; must be 768-dimensional).
+    embedding_model: str = "gemini-embedding-001"
+    embedding_dimensions: int = 768
+    # Free tiers meter per input text (Gemini: 100/min). Raise on a paid plan; 0 disables pacing.
+    embedding_requests_per_minute: int = 90
 
     # API.
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]

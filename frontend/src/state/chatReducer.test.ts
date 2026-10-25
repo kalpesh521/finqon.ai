@@ -379,3 +379,38 @@ describe("history groups", () => {
         expect(groups[0]?.items[0]?.title).toBe("Kept");
     });
 });
+
+describe("live streaming and small talk", () => {
+    const token = (text: string) => ({ type: "event" as const, event: { type: "token" as const, text } });
+
+    it("appends tokens as they arrive and clears them on retract", () => {
+        let state = start();
+        state = chatReducer(state, token("You spent "));
+        state = chatReducer(state, token("₹12,000."));
+        expect(state.turns[0]?.answer).toBe("You spent ₹12,000.");
+        state = chatReducer(state, { type: "event", event: parseChatEvent({ type: "retract" }) });
+        expect(state.turns[0]?.answer).toBe("");
+        state = chatReducer(state, token("You spent ₹4,321.50."));
+        expect(state.turns[0]?.answer).toBe("You spent ₹4,321.50.");
+    });
+
+    it("finishes a greeting as info with no queries", () => {
+        let state = start("hi");
+        state = chatReducer(state, token("Hello!"));
+        state = chatReducer(state, {
+            type: "event",
+            event: parseChatEvent({
+                type: "done",
+                message_id: MESSAGE,
+                conversation_id: CONVERSATION,
+                usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+                status: "info",
+            }),
+        });
+        const turn = state.turns[0];
+        expect(turn?.outcome).toBe("info");
+        expect(turn?.answer).toBe("Hello!");
+        expect(turn?.queries).toEqual([]);
+        expect(state.streaming).toBe(false);
+    });
+});

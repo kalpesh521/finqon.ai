@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal, Self
@@ -20,8 +21,14 @@ Tag = Literal[
     "ambiguous",
     "unanswerable",
     "injection",
+    "count",
+    "share",
+    "recurring",
+    "empty",
+    "smalltalk",
+    "privacy",
 ]
-Expect = Literal["values", "clarification", "refusal"]
+Expect = Literal["values", "clarification", "refusal", "smalltalk", "privacy"]
 
 REQUIRED_TAGS: frozenset[str] = frozenset(Tag.__args__)  # type: ignore[attr-defined]
 MIN_CASES = 20
@@ -62,6 +69,8 @@ class EvalCase(BaseModel):
     ordered: bool = False
     prior: PriorTurn | None = None
     must_not_match: list[str] = Field(default_factory=list)
+    must_match: list[str] = Field(default_factory=list)  # every regex must match the reply
+    rubric: list[str] = Field(default_factory=list)  # judged by the LLM judge, only these cases
     note: str = ""
 
     @model_validator(mode="after")
@@ -70,6 +79,11 @@ class EvalCase(BaseModel):
             raise ValueError(f"{self.id}: expect=values needs reference_sql")
         if self.expect != "values" and self.reference_sql:
             raise ValueError(f"{self.id}: only expect=values cases carry reference_sql")
+        for pattern in (*self.must_match, *self.must_not_match):
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                raise ValueError(f"{self.id}: bad regex {pattern!r}: {exc}") from exc
         if self.tag == "follow-up" and self.prior is None:
             raise ValueError(f"{self.id}: follow-up cases need a prior turn")
         if self.prior is not None and self.tag != "follow-up":

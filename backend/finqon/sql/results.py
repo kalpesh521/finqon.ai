@@ -9,6 +9,7 @@ from __future__ import annotations
 import datetime as dt
 import decimal
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -141,6 +142,30 @@ def summarize(result: QueryResult) -> ResultSummary:
     )
 
 
+def summarize_rows(
+    columns: Sequence[str], rows: Sequence[Sequence[Any]]
+) -> tuple[list[decimal.Decimal], str]:
+    """Numbers a reply may quote from a table, and the table text that dates must appear in.
+
+    Used by the evaluation: the same values ``ResultSummary`` shows the model, computed from
+    the rows the user saw.
+    """
+    allowed: list[decimal.Decimal] = [decimal.Decimal(len(rows))]
+    for index in range(len(columns)):
+        numbers = [
+            decimal.Decimal(str(row[index]))
+            for row in rows
+            if index < len(row)
+            and isinstance(row[index], int | float | decimal.Decimal)
+            and not isinstance(row[index], bool)
+        ]
+        if numbers:
+            allowed.extend(numbers)
+            allowed.extend((min(numbers), max(numbers), sum(numbers, decimal.Decimal(0))))
+    evidence = " ".join(str(cell) for row in rows for cell in row)
+    return allowed, evidence
+
+
 __all__ = [
     "FIRST_ROWS_FOR_MODEL",
     "Cell",
@@ -151,5 +176,6 @@ __all__ = [
     "ResultSummary",
     "column_kind",
     "summarize",
+    "summarize_rows",
     "to_json_cell",
 ]

@@ -9,17 +9,38 @@ from dataclasses import dataclass, field
 
 from finqon.agent.contracts import AgentDeps, AgentLimits, ModelUsage, TurnInput, TurnRecord
 from finqon.agent.date_ranges import today_in
-from finqon.agent.orchestrator import run_turn
+from finqon.agent.orchestrator import run_canned, run_turn
 from finqon.agent.prompt_builder import HistoryTurn
+from finqon.agent.smalltalk import smalltalk_reply
 from finqon.core.errors import NotFoundError
+from finqon.llm.embeddings import to_pgvector
+from finqon.privacy.pii import REFUSAL_MESSAGE, screen
 from finqon.repositories.conversations import ConversationRepository, NewMessage
 from finqon.repositories.statements import StatementRepository
 from finqon.repositories.usage import UsageRepository
 from finqon.resources import Resources
-from finqon.schemas.chat import ChatEvent, ErrorEvent
+from finqon.schemas.chat import ChatEvent, DoneStatus, ErrorEvent
 from finqon.schemas.conversations import ConversationDetail, ConversationSummary, ConversationUpdate
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class Gate:
+    """What the pre-model checks decided about a user message."""
+
+    text: str  # safe to store and to send to a model: sensitive values are already masked
+    reply: str | None = None  # a fixed reply; the model is not called
+    status: DoneStatus = "info"
+
+
+def gate_message(message: str) -> Gate:
+    """Mask PII, refuse secrets professionally, and answer small talk without the model."""
+    screened = screen(message.strip())
+    if screened.blocked:
+        return Gate(screened.text, REFUSAL_MESSAGE, "info")
+    reply = smalltalk_reply(screened.text)
+    return Gate(screened.text, reply, "info") if reply else Gate(screened.text)
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,7 +115,11 @@ class ChatService:
     # -- the turn ----------------------------------------------------------------------
 
     async def stream_turn(
-        self, user_id: uuid.UUID, conversation: OpenedConversation, question: str
+        self,
+        user_id: uuid.UUID,
+        conversation: OpenedConversation,
+        question: str,
+        gate: Gate | None = None,
     ) -> AsyncIterator[ChatEvent]:
         settings = self._r.settings
         turn = TurnInput(
@@ -112,6 +137,7 @@ class ChatService:
             catalog=self._r.catalog,
             record_usage=self._record_usage,
             save_turn=self._save_turn,
+            embed=self._embed_query,
             limits=AgentLimits(
                 max_model_steps=settings.agent_max_model_steps,
                 max_sql_executions=settings.agent_max_sql_executions,
@@ -120,11 +146,19 @@ class ChatService:
             ),
         )
         try:
+            if gate is not None and gate.reply is not None:
+                async for event in run_canned(turn, deps, gate.reply, gate.status):
+                    yield event
+                return
             async for event in run_turn(turn, deps):
                 yield event
         except Exception:
             logger.exception("chat_turn_failed")
             yield ErrorEvent(code="internal_error", message="Something went wrong. Please retry.")
+
+    async def _embed_query(self, text: str) -> str:
+        vectors = await self._r.embedder.embed([text])
+        return to_pgvector(vectors[0])
 
     async def _record_usage(self, usage: ModelUsage) -> None:
         async with self._r.database.session() as session:

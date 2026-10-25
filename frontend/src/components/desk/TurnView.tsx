@@ -32,6 +32,7 @@ export function TurnView({
 }: TurnViewProps) {
     const [sqlOpen, setSqlOpen] = useState(false);
     const showStatus = turn.outcome === "pending" && turn.answer === "" && turn.stage !== null;
+    const streamingNow = turn.outcome === "pending" && turn.answer !== "";
     const failed = turn.outcome === "error" || turn.outcome === "refused";
     return (
         <div className="space-y-3">
@@ -49,9 +50,20 @@ export function TurnView({
             <div className="flex gap-2.5">
                 <Mark className="h-8 w-8 shrink-0" />
                 <div className="min-w-0 flex-1">
-                    {showStatus && turn.stage ? <StatusSteps stage={turn.stage} /> : null}
+                    {showStatus && turn.stage === "thinking" ? <Thinking /> : null}
+                    {showStatus && turn.stage && turn.stage !== "thinking" ? (
+                        <StatusSteps stage={turn.stage} />
+                    ) : null}
                     {turn.answer ? (
-                        <p className="whitespace-pre-wrap text-[15px] font-normal leading-7 text-white/90">{turn.answer}</p>
+                        <p className="whitespace-pre-wrap text-[15px] font-normal leading-7 text-white/90">
+                            {turn.answer}
+                            {streamingNow ? (
+                                <span
+                                    className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[3px] animate-pulse bg-[#70E7FF]"
+                                    aria-hidden="true"
+                                />
+                            ) : null}
+                        </p>
                     ) : null}
                     {turn.clarification ? (
                         <div className="mt-2">
@@ -141,6 +153,19 @@ export function TurnView({
                 </div>
             </div>
         </div>
+    );
+}
+
+function Thinking() {
+    return (
+        <p className="flex items-center gap-2 py-1.5 text-sm text-white/55" role="status">
+            <span className="finqon-caret inline-flex gap-1" aria-hidden="true">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#70E7FF]" />
+                <span className="h-1.5 w-1.5 rounded-full bg-[#70E7FF]" />
+                <span className="h-1.5 w-1.5 rounded-full bg-[#70E7FF]" />
+            </span>
+            <span>Thinking…</span>
+        </p>
     );
 }
 

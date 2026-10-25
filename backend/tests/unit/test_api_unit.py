@@ -167,6 +167,7 @@ def test_openapi_exposes_the_chat_event_contract(client: TestClient) -> None:
         "ChartEvent",
         "ClarificationEvent",
         "TokenEvent",
+        "RetractEvent",
         "DoneEvent",
         "ErrorEvent",
     }

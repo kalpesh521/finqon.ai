@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-MessageStatus = Literal["answered", "clarification", "refused", "error"]
+MessageStatus = Literal["answered", "clarification", "refused", "error", "info"]
 
 
 class ConversationSummary(BaseModel):

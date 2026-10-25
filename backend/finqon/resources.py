@@ -18,6 +18,7 @@ from finqon.core.config import Settings
 from finqon.core.rate_limit import SlidingWindowRateLimiter
 from finqon.db.session import Database, create_engine
 from finqon.llm.client import LLMProvider, OpenAICompatibleProvider
+from finqon.llm.embeddings import Embedder, OpenAICompatibleEmbedder
 from finqon.sql.executor import QueryExecutor
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ class Resources:
     llm: LLMProvider
     catalog: CachedCatalog
     auth_limiter: SlidingWindowRateLimiter
+    embedder: Embedder
 
     @classmethod
     async def create(cls, settings: Settings, *, llm: LLMProvider | None = None) -> Resources:
@@ -50,6 +52,14 @@ class Resources:
             timeout=settings.llm_timeout_seconds,
             max_retries=settings.llm_max_retries,
         )
+        embedder = OpenAICompatibleEmbedder(
+            base_url=settings.llm_base_url,
+            api_key=settings.llm_api_key.get_secret_value(),
+            model=settings.embedding_model,
+            dimensions=settings.embedding_dimensions,
+            timeout=settings.llm_timeout_seconds,
+            requests_per_minute=settings.embedding_requests_per_minute,
+        )
         return cls(
             settings=settings,
             database=database,
@@ -59,6 +69,7 @@ class Resources:
             auth_limiter=SlidingWindowRateLimiter(
                 settings.auth_rate_limit_attempts, settings.auth_rate_limit_window_seconds
             ),
+            embedder=embedder,
         )
 
     async def check_ready(self) -> dict[str, bool]:
@@ -76,6 +87,9 @@ class Resources:
         aclose = getattr(self.llm, "aclose", None)
         if aclose is not None:
             await aclose()
+        aclose_embedder = getattr(self.embedder, "aclose", None)
+        if aclose_embedder is not None:
+            await aclose_embedder()
         await self.executor.close()
         await self.database.dispose()
 

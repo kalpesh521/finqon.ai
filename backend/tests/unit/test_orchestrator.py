@@ -17,6 +17,7 @@ from finqon.agent.orchestrator import (
     READ_ONLY_MESSAGE,
     UNVERIFIED_MESSAGE,
     choose_chart,
+    run_canned,
     run_turn,
 )
 from finqon.agent.prompt_builder import HistoryTurn
@@ -26,6 +27,7 @@ from finqon.schemas.chat import (
     ClarificationEvent,
     DoneEvent,
     ErrorEvent,
+    RetractEvent,
     SqlEvent,
     StatusEvent,
     TableEvent,
@@ -124,14 +126,17 @@ class Harness:
         self.saved.append(record)
         return uuid.uuid4()
 
-    async def ask(self, question: str, **kwargs: Any) -> list[Any]:
-        turn = TurnInput(
+    def turn(self, question: str, **kwargs: Any) -> TurnInput:
+        return TurnInput(
             user_id=USER,
             conversation_id=CONVERSATION,
             question=question,
             today=date(2026, 10, 21),
             **kwargs,
         )
+
+    async def ask(self, question: str, **kwargs: Any) -> list[Any]:
+        turn = self.turn(question, **kwargs)
         return [event async for event in run_turn(turn, self.deps)]
 
 
@@ -140,7 +145,14 @@ def types(events: list[Any]) -> list[str]:
 
 
 def answer_text(events: list[Any]) -> str:
-    return "".join(e.text for e in events if isinstance(e, TokenEvent)).strip()
+    """What the client ends up showing: tokens, minus anything a ``retract`` cleared."""
+    shown: list[str] = []
+    for event in events:
+        if isinstance(event, RetractEvent):
+            shown.clear()
+        elif isinstance(event, TokenEvent):
+            shown.append(event.text)
+    return "".join(shown).strip()
 
 
 # ---------------------------------------------------------------------------- happy path
@@ -473,3 +485,46 @@ def test_line_chart_prefers_a_date_axis() -> None:
 )
 def test_chart_is_none_when_it_cannot_be_drawn(hint: str, columns: list[Column], rows: int) -> None:
     assert choose_chart(hint, columns, rows).kind == "none"  # type: ignore[arg-type]
+
+
+# ------------------------------------------------------------------ live streaming
+
+
+async def test_answer_tokens_arrive_before_done_and_in_pieces() -> None:
+    llm = ScriptedLLM(
+        [
+            sql_reply(DINING_SQL, "Dining total.", "none"),
+            text_reply("You spent ₹4,321.50 on dining."),
+        ]
+    )
+    harness = Harness(llm, FakeSql([result([("total_spend", "number")], [[4321.5]])]))
+    events = await harness.ask("How much did I spend on eating out last month?")
+    tokens = [e for e in events if isinstance(e, TokenEvent)]
+    assert len(tokens) > 1  # delivered as the model wrote it, not as one block
+    assert not any(isinstance(e, RetractEvent) for e in events)  # verified text is not retracted
+
+
+async def test_ungrounded_live_text_is_retracted_then_replaced() -> None:
+    llm = ScriptedLLM(
+        [
+            sql_reply(DINING_SQL, "Dining total.", "none"),
+            text_reply("You spent ₹12,000."),
+            text_reply("You spent ₹4,321.50."),
+        ]
+    )
+    harness = Harness(llm, FakeSql([result([("total_spend", "number")], [[4321.5]])]))
+    events = await harness.ask("How much did I spend on eating out last month?")
+    kinds = types(events)
+    assert "retract" in kinds
+    assert kinds.index("retract") < len(kinds) - 1
+    assert answer_text(events) == "You spent ₹4,321.50."
+
+
+async def test_canned_reply_runs_no_model_and_no_sql() -> None:
+    llm = ScriptedLLM([])
+    harness = Harness(llm, FakeSql([]))
+    events = [e async for e in run_canned(harness.turn("hi"), harness.deps, "Hello!", "info")]
+    assert types(events)[-1] == "done"
+    assert answer_text(events) == "Hello!"
+    assert not any(isinstance(e, StatusEvent | SqlEvent) for e in events)
+    assert harness.saved[0].status == "info" and llm.calls == []

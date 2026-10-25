@@ -31,6 +31,20 @@ class SqlRunner(Protocol):
         self, query: str, user_id: uuid.UUID, limit: int = 5
     ) -> list[dict[str, Any]]: ...
 
+    async def search_transactions(
+        self,
+        embedding: str | None,
+        text_query: str,
+        user_id: uuid.UUID,
+        *,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        min_amount: float | None = None,
+        max_amount: float | None = None,
+        direction: str | None = None,
+        limit: int = 15,
+    ) -> QueryResult: ...
+
 
 class CatalogProvider(Protocol):
     async def get(self) -> SchemaCatalog: ...
@@ -89,3 +103,5 @@ class AgentDeps:
     save_turn: Callable[[TurnRecord], Awaitable[uuid.UUID]]
     limits: AgentLimits = field(default_factory=AgentLimits)
     clock: Callable[[], float] = time.monotonic
+    # Embeds the search text. ``None`` disables the semantic search tool's vector branch.
+    embed: Callable[[str], Awaitable[str]] | None = None

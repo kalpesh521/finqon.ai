@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 RUN_SQL = "run_sql_query"
 SEARCH_MERCHANTS = "search_merchants"
+SEARCH_TRANSACTIONS = "search_transactions"
 ASK_CLARIFICATION = "ask_clarification"
 
 ChartHint = Literal["bar", "pie", "line", "none"]
@@ -22,6 +23,16 @@ class RunSqlArgs(BaseModel):
 
 class SearchMerchantsArgs(BaseModel):
     query: Annotated[str, Field(min_length=1, max_length=100)]
+
+
+class SearchTransactionsArgs(BaseModel):
+    query: Annotated[str, Field(min_length=1, max_length=200)]
+    date_from: str | None = None
+    date_to: str | None = None
+    min_amount: Annotated[float, Field(ge=0)] | None = None
+    max_amount: Annotated[float, Field(ge=0)] | None = None
+    direction: Literal["debit", "credit"] | None = None
+    limit: Annotated[int, Field(ge=1, le=30)] = 15
 
 
 class AskClarificationArgs(BaseModel):
@@ -78,6 +89,33 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": SEARCH_TRANSACTIONS,
+            "description": (
+                "Semantic search over transaction descriptions: finds transactions by meaning "
+                "('coffee shops', 'ride hailing', 'electricity') even when the exact merchant "
+                "name or category is unknown or mis-spelled. Returns matching rows with id, "
+                "date, description, merchant, category and amount. Use it to FIND transactions "
+                "by what they were for; use run_sql_query for totals, rankings and trends. "
+                "Optional filters are applied before ranking."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "What the user is looking for."},
+                    "date_from": {"type": "string", "description": "YYYY-MM-DD, inclusive."},
+                    "date_to": {"type": "string", "description": "YYYY-MM-DD, inclusive."},
+                    "min_amount": {"type": "number"},
+                    "max_amount": {"type": "number"},
+                    "direction": {"type": "string", "enum": ["debit", "credit"]},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 30},
+                },
                 "required": ["query"],
             },
         },

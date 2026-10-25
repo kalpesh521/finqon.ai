@@ -7,6 +7,7 @@ security, not the model, decides which rows are visible.
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
 import re
 import time
@@ -136,6 +137,82 @@ class QueryExecutor:
         except asyncpg.PostgresError as exc:
             raise QueryExecutionError(_database_error_message(exc)) from exc
         return [{"merchant_name": r["merchant_name"], "score": float(r["score"])} for r in records]
+
+    async def search_transactions(
+        self,
+        embedding: str | None,
+        text_query: str,
+        user_id: uuid.UUID,
+        *,
+        date_from: dt.date | None = None,
+        date_to: dt.date | None = None,
+        min_amount: float | None = None,
+        max_amount: float | None = None,
+        direction: str | None = None,
+        limit: int = 15,
+    ) -> QueryResult:
+        """Hybrid search: pgvector cosine and pg_trgm / substring, fused with RRF.
+
+        Filters (date, amount, direction) apply before ranking inside both branches. Row-level
+        security limits both to the caller. ``embedding`` is a pgvector text literal.
+        """
+        branch_filter = """
+            AND ($3::date IS NULL OR t.txn_date >= $3)
+            AND ($4::date IS NULL OR t.txn_date <= $4)
+            AND ($5::numeric IS NULL OR t.amount >= $5)
+            AND ($6::numeric IS NULL OR t.amount <= $6)
+            AND ($7::text IS NULL OR t.direction = $7)
+        """
+        sql = f"""
+            WITH vec AS (
+                SELECT t.id, row_number() OVER (ORDER BY t.embedding <=> $1::vector) AS rnk
+                FROM ledger.transactions t
+                WHERE t.embedding IS NOT NULL AND $1::vector IS NOT NULL {branch_filter}
+                ORDER BY t.embedding <=> $1::vector
+                LIMIT 40
+            ), lex AS (
+                SELECT t.id,
+                       row_number() OVER (ORDER BY similarity(t.raw_description, $2) DESC) AS rnk
+                FROM ledger.transactions t
+                WHERE (t.raw_description % $2
+                       OR t.raw_description ILIKE '%' || $2 || '%') {branch_filter}
+                ORDER BY similarity(t.raw_description, $2) DESC
+                LIMIT 40
+            ), fused AS (
+                SELECT id, SUM(1.0 / (60 + rnk)) AS score
+                FROM (SELECT * FROM vec UNION ALL SELECT * FROM lex) ranked
+                GROUP BY id
+            )
+            SELECT r.id, r.txn_date, r.raw_description AS description, r.merchant_name,
+                   r.category_name, r.amount, r.direction
+            FROM fused f JOIN reporting.transactions r ON r.id = f.id
+            ORDER BY f.score DESC, r.txn_date DESC, r.id
+            LIMIT $8
+        """
+        started = time.perf_counter()
+        try:
+            async with self._pool.acquire() as conn, conn.transaction(readonly=True):
+                await self._prepare_session(conn, user_id)
+                statement = await conn.prepare(sql)
+                columns = [
+                    Column(name=attr.name, type=column_kind(attr.type.name))
+                    for attr in statement.get_attributes()
+                ]
+                records = await statement.fetch(
+                    embedding, text_query, date_from, date_to, min_amount, max_amount,
+                    direction, limit,
+                )  # fmt: skip
+        except asyncpg.PostgresError as exc:
+            raise QueryExecutionError(_database_error_message(exc)) from exc
+        raw_rows = [tuple(record.values()) for record in records]
+        return QueryResult(
+            columns=columns,
+            rows=[[to_json_cell(v) for v in row] for row in raw_rows],
+            raw_rows=raw_rows,
+            truncated=False,
+            sql="-- semantic search",
+            elapsed_ms=int((time.perf_counter() - started) * 1000),
+        )
 
     async def fetch_catalog_rows(
         self, sql: str, args: Sequence[Any] = ()

@@ -14,6 +14,7 @@ from decimal import Decimal
 from typing import Any, Literal
 
 from finqon.agent.grounding import numbers_in, verify_answer
+from finqon.sql.results import summarize_rows
 
 CompareMode = Literal["rows", "superset", "numbers"]
 
@@ -175,3 +176,39 @@ def check_forbidden_phrases(answer: str, patterns: Sequence[str]) -> Verdict:
         if found:
             return Verdict.fail(f"reply matches forbidden pattern {pattern!r}: {found.group(0)!r}")
     return Verdict.ok()
+
+
+def check_required_phrases(reply: str, patterns: Sequence[str]) -> Verdict:
+    """Every pattern must match the reply (for facts the reply is required to state)."""
+    for pattern in patterns:
+        if not re.search(pattern, reply, flags=re.IGNORECASE):
+            return Verdict.fail(f"reply is missing required pattern {pattern!r}")
+    return Verdict.ok()
+
+
+def check_grounding(
+    reply: str, columns: Sequence[str], rows: Sequence[Sequence[Any]], question: str = ""
+) -> Verdict:
+    """Every figure and date in the reply must come from the final table.
+
+    Allowed: each numeric cell, the row count, and the min, max and sum of each numeric
+    column (the same values the model was shown), plus numbers from the question. A reply
+    that contradicts its own table fails even when some other table matched the reference.
+    """
+    allowed, evidence = summarize_rows(columns, rows)
+    allowed.extend(numbers_in(question))
+    result = verify_answer(reply, allowed, evidence=evidence)
+    if result.ungrounded:
+        return Verdict.fail(f"reply states {', '.join(result.ungrounded)}, not in the result table")
+    return Verdict.ok()
+
+
+def check_no_model_reply(
+    reply: str, *, queries_run: int, tables_shown: int, forbidden: Sequence[str] = ()
+) -> Verdict:
+    """Small talk and privacy notices: a reply, no SQL, no table, none of the forbidden text."""
+    if queries_run or tables_shown:
+        return Verdict.fail("ran a query or showed a table for a message that needs neither")
+    if not reply.strip():
+        return Verdict.fail("no reply text")
+    return check_forbidden_phrases(reply, forbidden)

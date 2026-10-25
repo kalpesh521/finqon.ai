@@ -496,6 +496,171 @@
         }
       }
     },
+    "/api/v1/files": {
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "List Files",
+        "operationId": "list_files_api_v1_files_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FileRecord"
+                  },
+                  "type": "array",
+                  "title": "Response List Files Api V1 Files Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Upload Files",
+        "operationId": "upload_files_api_v1_files_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_files_api_v1_files_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FileRecord"
+                  },
+                  "type": "array",
+                  "title": "Response Upload Files Api V1 Files Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/files/{file_id}": {
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Get File",
+        "operationId": "get_file_api_v1_files__file_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "File Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRecord"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Delete File",
+        "operationId": "delete_file_api_v1_files__file_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "File Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/statement": {
       "get": {
         "tags": [
@@ -525,6 +690,24 @@
   },
   "components": {
     "schemas": {
+      "Body_upload_files_api_v1_files_post": {
+        "properties": {
+          "files": {
+            "items": {
+              "type": "string",
+              "contentMediaType": "application/octet-stream"
+            },
+            "type": "array",
+            "title": "Files",
+            "description": "CSV, XLSX or PDF statements."
+          }
+        },
+        "type": "object",
+        "required": [
+          "files"
+        ],
+        "title": "Body_upload_files_api_v1_files_post"
+      },
       "ChatRequest": {
         "properties": {
           "conversation_id": {
@@ -686,6 +869,130 @@
         "type": "object",
         "title": "ConversationUpdate"
       },
+      "FileRecord": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "processing",
+              "ready",
+              "failed",
+              "quarantined"
+            ],
+            "title": "Status"
+          },
+          "stage": {
+            "type": "string",
+            "title": "Stage",
+            "description": "Human-readable step of the ingestion job."
+          },
+          "progress": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Progress"
+          },
+          "rows_imported": {
+            "type": "integer",
+            "title": "Rows Imported"
+          },
+          "rows_skipped": {
+            "type": "integer",
+            "title": "Rows Skipped"
+          },
+          "date_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date From"
+          },
+          "date_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date To"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "filename",
+          "size_bytes",
+          "status",
+          "stage",
+          "progress",
+          "rows_imported",
+          "rows_skipped",
+          "date_from",
+          "date_to",
+          "warnings",
+          "error",
+          "created_at",
+          "completed_at"
+        ],
+        "title": "FileRecord"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -789,7 +1096,8 @@
               "answered",
               "clarification",
               "refused",
-              "error"
+              "error",
+              "info"
             ],
             "title": "Status"
           },
@@ -850,6 +1158,19 @@
             "maxLength": 128,
             "minLength": 10,
             "title": "Password"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
           }
         },
         "type": "object",
@@ -869,6 +1190,17 @@
           "email": {
             "type": "string",
             "title": "Email"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
           },
           "created_at": {
             "type": "string",
@@ -963,6 +1295,17 @@
           "email": {
             "type": "string",
             "title": "Email"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
           }
         },
         "type": "object",
@@ -1119,7 +1462,8 @@
             "enum": [
               "answered",
               "clarification",
-              "refused"
+              "refused",
+              "info"
             ],
             "title": "Status",
             "type": "string"
@@ -1155,6 +1499,19 @@
           "message"
         ],
         "title": "ErrorEvent",
+        "type": "object"
+      },
+      "RetractEvent": {
+        "description": "Discard the answer text streamed so far; a verified replacement follows.\n\nLive tokens go out before the grounding check finishes. If the check fails, or the\nmodel turns out to be calling a tool, the client clears what it showed.",
+        "properties": {
+          "type": {
+            "const": "retract",
+            "default": "retract",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "RetractEvent",
         "type": "object"
       },
       "SqlEvent": {
@@ -1313,6 +1670,7 @@
             "clarification": "#/components/schemas/ClarificationEvent",
             "done": "#/components/schemas/DoneEvent",
             "error": "#/components/schemas/ErrorEvent",
+            "retract": "#/components/schemas/RetractEvent",
             "sql": "#/components/schemas/SqlEvent",
             "status": "#/components/schemas/StatusEvent",
             "table": "#/components/schemas/TableEvent",
@@ -1338,6 +1696,9 @@
           },
           {
             "$ref": "#/components/schemas/TokenEvent"
+          },
+          {
+            "$ref": "#/components/schemas/RetractEvent"
           },
           {
             "$ref": "#/components/schemas/DoneEvent"

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import SecretStr, field_validator
@@ -64,6 +64,26 @@ class Settings(BaseSettings):
     # Free tiers meter per input text (Gemini: 100/min). Raise on a paid plan; 0 disables pacing.
     embedding_requests_per_minute: int = 90
 
+    # Semantic cache (see docs/semantic-cache.md). ``off`` is the safe default; ``shadow``
+    # looks up and logs what it would have served without serving it; ``on`` serves hits.
+    cache_mode: Literal["off", "shadow", "on"] = "off"
+    # ``redis`` needs Redis Stack (RediSearch). ``memory`` is per process: for development,
+    # tests and a single replica.
+    cache_backend: Literal["memory", "redis"] = "memory"
+    redis_url: SecretStr = SecretStr("")
+    cache_key_prefix: str = "finqon:sc"
+    # Cosine similarity (0 to 1) an entry needs after every other check has passed.
+    cache_similarity_threshold: float = 0.92
+    # Entries whose answer does not depend on today's date. Entries that do expire at the
+    # end of the local day regardless.
+    cache_ttl_seconds: int = 7 * 24 * 3600
+    # Hard budgets so a slow cache can never make a turn slower than having none.
+    cache_op_timeout_ms: int = 250
+    cache_embed_timeout_ms: int = 1200
+    cache_breaker_cooldown_seconds: float = 30.0
+    cache_memory_max_entries: int = 2000
+    cache_vector_index: Literal["flat", "hnsw"] = "flat"
+
     # API.
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
     timezone: str = "Asia/Kolkata"
@@ -75,6 +95,9 @@ class Settings(BaseSettings):
     agent_max_repairs: int = 2
     agent_deadline_seconds: float = 30.0
     agent_history_turns: int = 4
+    # Pipeline stages around the model (see docs/AGENT_PATTERN.md).
+    agent_clarify_before_model: bool = True
+    agent_context_top_views: int = 5
 
     # Query executor.
     sql_statement_timeout: str = "5s"
@@ -95,6 +118,26 @@ class Settings(BaseSettings):
             ZoneInfo(value)
         except ZoneInfoNotFoundError as exc:
             raise ValueError(f"unknown timezone: {value}") from exc
+        return value
+
+    @field_validator("cache_similarity_threshold")
+    @classmethod
+    def _valid_threshold(cls, value: float) -> float:
+        # Below 0.8 the embedding, not the question, decides what counts as "the same".
+        if not 0.8 <= value <= 1.0:
+            raise ValueError("cache_similarity_threshold must be between 0.8 and 1.0")
+        return value
+
+    @field_validator(
+        "cache_ttl_seconds",
+        "cache_op_timeout_ms",
+        "cache_embed_timeout_ms",
+        "agent_context_top_views",
+    )
+    @classmethod
+    def _positive(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("cache timeouts and TTLs must be positive")
         return value
 
     @property
@@ -123,6 +166,14 @@ class Settings(BaseSettings):
             )
         if len(self.jwt_secret.get_secret_value()) < 32:
             raise ConfigurationError("FINQON_JWT_SECRET must be at least 32 characters.")
+        if (
+            self.cache_mode != "off"
+            and self.cache_backend == "redis"
+            and not self.redis_url.get_secret_value()
+        ):
+            raise ConfigurationError(
+                "FINQON_CACHE_BACKEND=redis needs FINQON_REDIS_URL (Redis Stack with RediSearch)."
+            )
 
 
 @lru_cache

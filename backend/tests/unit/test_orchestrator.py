@@ -104,6 +104,7 @@ class Harness:
         sql: FakeSql | None = None,
         limits: AgentLimits | None = None,
         clock: Any = None,
+        **deps_overrides: Any,
     ) -> None:
         self.saved: list[TurnRecord] = []
         self.usage: list[ModelUsage] = []
@@ -117,6 +118,7 @@ class Harness:
             save_turn=self._save_turn,
             limits=limits or AgentLimits(),
             **({"clock": clock} if clock else {}),
+            **deps_overrides,
         )
 
     async def _record_usage(self, usage: ModelUsage) -> None:
@@ -296,7 +298,7 @@ async def test_clarification_ends_the_turn_and_caps_options() -> None:
             )
         ]
     )
-    harness = Harness(llm)
+    harness = Harness(llm, clarify_before_model=False)  # exercise the model's own tool
     events = await harness.ask("How much did I spend in Q3?")
 
     clarification = next(e for e in events if isinstance(e, ClarificationEvent))

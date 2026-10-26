@@ -105,3 +105,7 @@ class AgentDeps:
     clock: Callable[[], float] = time.monotonic
     # Embeds the search text. ``None`` disables the semantic search tool's vector branch.
     embed: Callable[[str], Awaitable[str]] | None = None
+    # Ask the deterministic ambiguity gate before calling the model.
+    clarify_before_model: bool = True
+    # How many views the context retriever puts in the prompt.
+    context_top_views: int = 5

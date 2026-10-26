@@ -121,6 +121,7 @@ class IngestionService:
             deleted = await StatementRepository(session).delete(statement_id)
         if not deleted:
             raise NotFoundError("File not found.")
+        await self._r.forget_cached_answers(user_id)
 
     async def close(self) -> None:
         for task in list(self._tasks):
@@ -242,3 +243,4 @@ class IngestionService:
                 date_to=max(r.txn_date for r in rows),
                 warnings=parsed.warnings,
             )
+        await self._r.forget_cached_answers(user_id)

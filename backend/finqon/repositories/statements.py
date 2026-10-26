@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 import uuid
 from collections.abc import Sequence
@@ -212,6 +213,31 @@ class StatementRepository:
             )
         )
         return [r[0] for r in result.all()]
+
+    # -- cache validity -------------------------------------------------------------
+
+    async def data_version(self) -> str:
+        """A short fingerprint of the caller's ledger, for the semantic cache.
+
+        Row-level security limits every count to the caller. Uploads add an account and its
+        transactions with ids from sequences that only grow; deleting a statement removes
+        them. Any of those moves at least one of the four numbers, so an entry written for one
+        ledger is never offered for another.
+        """
+        # A savepoint: if this read ever fails, the caller's transaction is still usable.
+        async with self._s.begin_nested():
+            row = (
+                await self._s.execute(
+                    text(
+                        "SELECT (SELECT count(*) FROM ledger.accounts) AS accounts, "
+                        "(SELECT coalesce(max(id), 0) FROM ledger.accounts) AS max_account, "
+                        "(SELECT count(*) FROM ledger.transactions) AS txns, "
+                        "(SELECT coalesce(max(id), 0) FROM ledger.transactions) AS max_txn"
+                    )
+                )
+            ).one()
+        material = f"{row.accounts}:{row.max_account}:{row.txns}:{row.max_txn}"
+        return hashlib.sha256(material.encode()).hexdigest()[:16]
 
     # -- embedding backfill ---------------------------------------------------------
 

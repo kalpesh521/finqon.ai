@@ -1,9 +1,193 @@
-# FinQon.ai Agent Pattern Diagram
+# FinQon.ai Agent Architecture
 
-## Architecture Overview: single-agent tool-calling loop with a verifier gate
+## Enterprise pipeline: cache, ambiguity gate, context retriever, SQL agent, guardrails, error fixer, grounded response
 
-> The model uses native function calling (not text-based "Thought/Action" ReAct), and the
-> loop is written by hand. Example values and payloads below are illustrative.
+Each stage is its own module with one job, a fixed contract, and its own tests. The model is
+called in exactly two stages (the SQL agent and the response), and the deterministic stages
+around it remove model calls, constrain it, or check it.
+
+```mermaid
+flowchart TD
+    UQ([User query]):::user --> PRE["Input screening<br/>PII mask, small talk"]:::gate
+    PRE --> CACHE[("Semantic cache<br/>exact + semantic tier")]:::cache
+
+    CACHE -- "hit: replay and verify<br/>(SQL, digest, grounding)" --> RESP
+    CACHE -- miss --> AMB{"Is the query<br/>ambiguous?"}:::decision
+    AMB -- yes --> CLAR([Ask clarifying question]):::user
+    CLAR -. "user answers" .-> UQ
+    AMB -- no --> CTX
+
+    subgraph INPUT ["Input processing"]
+        CTX["Context retriever<br/>top views, term mapping"]:::retriever
+        VDB[("pgvector<br/>transaction RAG")]:::store
+        CTX <-. "search_transactions<br/>(model tool)" .-> VDB
+    end
+
+    CTX --> SQLA["SQL agent<br/>schema, rules, few-shot, reasoning"]:::agent
+    SQLA -- "generate SQL" --> GUARD
+
+    subgraph GR ["Guardrails and validation"]
+        GUARD["Syntax parser<br/>sqlglot allow-list"]:::guard
+        GUARD -- safe --> RLS["Reader role + RLS<br/>read-only, 5 s timeout"]:::guard
+    end
+
+    GUARD -- "invalid syntax" --> FIX
+    GUARD -- "forbidden: refuse,<br/>never repair" --> REFUSE([Refusal]):::user
+    RLS --> EXEC{"Execute<br/>query"}:::decision
+    EXEC --> DB[("PostgreSQL<br/>ledger views")]:::store
+    EXEC -- "SQL error" --> FIX["Error fixer<br/>diagnosis + hint"]:::fixer
+    FIX -- "feedback (max 2 repairs)" --> SQLA
+    DB -- success --> RESP["Response node<br/>grounding check, then<br/>text, table, chart"]:::user
+    RESP -- "verified single-query plan" --> CACHE
+
+    classDef user fill:#b6f2b6,stroke:#1f6f1f,color:#111
+    classDef cache fill:#ffe58a,stroke:#9a7b00,color:#111
+    classDef decision fill:#ffc2c2,stroke:#a33,color:#111
+    classDef retriever fill:#d9c9ff,stroke:#5b3fb0,color:#111
+    classDef agent fill:#a9d6ff,stroke:#1b5fa8,color:#111
+    classDef guard fill:#ffffff,stroke:#333,color:#111
+    classDef fixer fill:#ffe58a,stroke:#9a7b00,color:#111
+    classDef gate fill:#eeeeee,stroke:#666,color:#111
+    classDef store fill:#f5f5f5,stroke:#333,color:#111
+```
+
+Colours follow the reference diagram: green is what the user sees, yellow is cache and
+repair, pink is a decision, purple is retrieval, blue is the model that writes SQL.
+
+### Where each box lives
+
+| Box | Module | Model call | Deterministic |
+| --- | --- | --- | --- |
+| Input screening | `privacy/pii.py`, `agent/smalltalk.py`, `services/chat.py:gate_message` | no | yes |
+| Semantic cache | `cache/` (see `docs/semantic-cache.md`) | no (an embedding for the semantic tier) | yes |
+| Is the query ambiguous? | `agent/ambiguity.py` | no | yes |
+| Ask clarifying question | `orchestrator._preflight_clarification`, `ask_clarification` tool | no / the model may also call the tool | yes / no |
+| Context retriever | `agent/context.py`, `prompt_builder.py` | no | yes |
+| Vector DB (RAG) | `search_transactions` tool, `sql/executor.py`, pgvector + pg_trgm | an embedding | yes |
+| SQL agent | `orchestrator.py`, `prompt_builder.py`, `few_shot_examples.py`, `llm/client.py` | **yes** | no |
+| Guardrails: syntax parser | `sql/guard.py` | no | yes |
+| Guardrails: RLS | `sql/executor.py` (reader role) plus PostgreSQL policies | no | yes |
+| Execute query / DB | `sql/executor.py` | no | yes |
+| Error fixer | `agent/error_fixer.py`, `orchestrator._repair_payload` | no | yes |
+| Response node | `orchestrator.py`, `agent/grounding.py`, `services/chat.py` | **yes** | the check is |
+
+### Stage contracts
+
+| Stage | Input | Output | On failure |
+| --- | --- | --- | --- |
+| Semantic cache | question, user, ledger and schema fingerprint | verified replay, or a miss | Any error reads as a miss |
+| Ambiguity gate | question, history, previous SQL, category names | a clarification (question and at most 3 options), or nothing | Cannot fail; no match means the agent proceeds |
+| Context retriever | question, schema catalog, `top_k` | ranked views and `"phrase" -> schema` mappings, as a prompt section | A mapping whose category or column is not in the live catalog is dropped |
+| SQL agent | system prompt, question | `run_sql_query`, `search_merchants`, `search_transactions` or `ask_clarification` calls, then the answer | Model errors become an `error` event |
+| Guardrails | generated SQL | guarded SQL with a row cap, or a `SqlGuardError` | Forbidden: refuse. Syntax: error fixer |
+| Execution | guarded SQL, user id | rows, or `QueryExecutionError` | Error fixer |
+| Error fixer | error text, the SQL, catalog | the original error plus a `hint` and a stable `kind` | No matching rule: the original error alone |
+| Response node | tool results, drafted answer | streamed answer, or a regeneration, then a refusal | Unverified figures are never shown |
+
+### What the new stages do
+
+**Ambiguity gate.** Two rules, both of which would otherwise force the model to guess:
+
+1. A quarter with no year kind ("Q3"). Financial and calendar quarters never coincide here, so
+   the user is asked: *Which Q3 do you mean?* with `Financial-year Q3 (Oct-Dec)` and
+   `Calendar Q3 (Jul-Sep)`. Any wording that settles it ("financial", "fiscal", "calendar",
+   "FY26") skips the question, and a choice made earlier in the conversation carries over.
+2. A follow-up fragment ("and last month?") in a conversation with nothing to follow up.
+
+It runs after the cache lookup (as in the reference diagram) and before the model, so asking
+costs no tokens and the answer cannot be forgotten by the model. The model can still call
+`ask_clarification` for anything else, under rules 8 and 9 of the prompt. The event and the
+stored message are identical either way, so the UI needs no change: the options appear as
+buttons and the click is the next message.
+
+**Context retriever.** Ranks the views for the question (name, comments, columns, and what
+each view is for) and keeps the best `FINQON_AGENT_CONTEXT_TOP_VIEWS`. It maps the user's
+words to schema entities, for example `"eating out" -> category_name = 'Dining'` and
+`"salary" -> category_name = 'Salary' (income: not in reporting.spend, use
+reporting.transactions)`, which is the reference diagram's "Apple means comp_name". Hints are
+validated against the live catalog and labelled as hints; the schema in the prompt stays
+authoritative.
+
+**Error fixer.** When SQL fails, the model receives the original error unchanged and a hint:
+
+```json
+{"error": "column \"amt\" does not exist",
+ "instruction": "Fix the SQL and try again.",
+ "hint": "There is no column 'amt'. Closest columns in the schema: spend_amount (reporting.spend)."}
+```
+
+Rules cover unknown columns and views (with did-you-mean from the catalog, including
+abbreviations such as `amt`), division by zero, `GROUP BY` and aggregate-in-`WHERE` mistakes,
+ambiguous columns, type mismatches, bad literals, unknown functions, timeouts and syntax
+errors. It never edits SQL: the model rewrites it and the guard validates the rewrite as
+usual, so this stage cannot widen what may run.
+
+### Where this differs from the reference diagram, on purpose
+
+| Reference | FinQon | Why |
+| --- | --- | --- |
+| "unsafe" goes to the error fixer | Forbidden SQL (writes, other tables, denied functions) is refused and never repaired; only syntax and execution errors are fixed | Helping a model that tried to escape the allow-list is a security hole, not a repair |
+| RLS is a step after the parser | RLS is enforced by PostgreSQL for the reader role on every query | A check in application code can be bypassed by a bug; the database cannot |
+| Retrieve top 5-10 tables from a vector DB | Rank views by keywords and intent; the vector index serves transaction search | There are three reporting views, and a keyword rank is exact and free at that size. The `retrieve_context` signature is the seam for a vector-ranked schema retriever |
+| One-shot or few-shot, chain of thought | Few-shot examples validated by the guard in tests; reasoning stays inside the model | No hidden reasoning text is stored or shown |
+
+### Limits (unchanged by the new stages)
+
+```
+MAX_MODEL_STEPS = 6   MAX_SQL_EXECUTIONS = 3   MAX_REPAIRS = 2
+GROUNDING RETRY = 1   DEADLINE_SECONDS = 30
+```
+
+The gate and the retriever add no model steps. A clarification ends the turn with zero model
+calls. The error fixer's hints make each repair more likely to succeed within the same budget.
+
+### Configuration
+
+| Setting | Default | Effect |
+| --- | --- | --- |
+| `FINQON_AGENT_CLARIFY_BEFORE_MODEL` | `true` | `false` leaves every clarification to the model |
+| `FINQON_AGENT_CONTEXT_TOP_VIEWS` | `5` | Views in the prompt. With three views the whole schema is always sent, ranked |
+| `FINQON_CACHE_MODE` | `off` | The semantic cache in front of all stages |
+
+### Observability
+
+| Log event | Fields | Use |
+| --- | --- | --- |
+| `agent_preflight_clarification` | `reason` (`quarter_year_kind`, `dangling_follow_up`) | How often the gate asks, and why |
+| `agent_sql_error` | `kind` (`unknown_column`, `syntax`, `timeout`, ...) | Which SQL mistakes the model makes; feed the common ones into the prompt or examples |
+| `semantic_cache_turn`, `semantic_cache_shadow` | see `docs/semantic-cache.md` | Cache hit rate and safety |
+
+Neither new event carries SQL text, question text or user ids.
+
+### How to verify the new stages
+
+```bash
+make test-unit                              # tests/unit/test_agent_stages.py: 52 tests, no services
+make eval                                   # live model; the ambiguous-quarter case is now deterministic
+curl -N -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"message": "How much did I spend in Q3?"}' localhost:8000/api/v1/chat
+# expect: a clarification event with two options, then done. No sql, table or token events.
+docker compose logs api | grep -E 'agent_(preflight_clarification|sql_error)'
+```
+
+### Known gaps
+
+* Schema retrieval is keyword and intent based. It is exact for three views and will need the
+  vector-ranked retriever when the catalog grows to dozens of views.
+* The gate has two rules. More ambiguity types (for example "last year" meaning financial or
+  calendar) should be added only with eval evidence that a default is wrong often enough.
+* The error fixer's effect on repair success has not been measured against the live model.
+  Run `make eval` and compare steps and refusals before and after, and watch `agent_sql_error`.
+* Term mappings are a static English glossary; merchant names are resolved by the
+  `search_merchants` tool, not by the retriever.
+
+## Inner loop detail
+
+The rest of this file describes the SQL agent, guardrail, execution and response stages in
+detail. The model uses native function calling (not text-based "Thought/Action" ReAct), and
+the loop is written by hand. Example values and payloads are illustrative. In the diagrams
+below, STEP 1 also receives the retrieved context for the question, and a failed STEP 4 or
+execution passes through the error fixer before the model sees it.
 
 ```
 ╔═══════════════════════════════════════════════════════════════════════════════╗
@@ -448,7 +632,10 @@ STREAM EVENTS:
 backend/finqon/agent/
 ├── orchestrator.py          ← Main loop (run_turn generator)
 ├── contracts.py             ← Protocol definitions (testable)
-├── prompt_builder.py        ← System prompt + history
+├── prompt_builder.py        ← System prompt + history + retrieved context
+├── ambiguity.py             ← Pre-model clarification gate
+├── context.py               ← Context retriever: view ranking, term mapping
+├── error_fixer.py           ← SQL error diagnosis and repair hints
 ├── few_shot_examples.py     ← Example Q&A pairs
 ├── tools.py                 ← Tool definitions (JSON schema)
 ├── grounding.py             ← Number & date verification

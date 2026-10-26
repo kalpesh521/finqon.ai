@@ -8,12 +8,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from sqlalchemy import text
 
 from finqon.agent.catalog import CachedCatalog
+from finqon.cache.runner import CachedTurnRunner
+from finqon.cache.service import CacheConfig, SemanticCache
+from finqon.cache.store import CacheStore, MemoryStore
 from finqon.core.config import Settings
 from finqon.core.rate_limit import SlidingWindowRateLimiter
 from finqon.db.session import Database, create_engine
@@ -34,6 +38,8 @@ class Resources:
     catalog: CachedCatalog
     auth_limiter: SlidingWindowRateLimiter
     embedder: Embedder
+    cache: SemanticCache | None = None
+    turn_runner: CachedTurnRunner | None = None
 
     @classmethod
     async def create(cls, settings: Settings, *, llm: LLMProvider | None = None) -> Resources:
@@ -60,6 +66,7 @@ class Resources:
             timeout=settings.llm_timeout_seconds,
             requests_per_minute=settings.embedding_requests_per_minute,
         )
+        cache = _build_cache(settings, embedder)
         return cls(
             settings=settings,
             database=database,
@@ -70,13 +77,46 @@ class Resources:
                 settings.auth_rate_limit_attempts, settings.auth_rate_limit_window_seconds
             ),
             embedder=embedder,
+            cache=cache,
+            turn_runner=(
+                CachedTurnRunner(cache, mode=settings.cache_mode, tz=settings.tz)
+                if cache is not None
+                else None
+            ),
         )
+
+    async def forget_cached_answers(self, user_id: uuid.UUID) -> None:
+        """Drop a user's cached answers after their statements change. Best effort.
+
+        Correctness does not depend on this: entries are keyed by a ledger fingerprint and
+        every hit is re-verified against the database. It frees memory and keeps answers
+        derived from a deleted statement from lingering until their TTL.
+        """
+        if self.cache is None:
+            return
+        try:
+            await self.cache.purge_user(user_id)
+        except Exception:
+            logger.warning("semantic_cache_purge_failed", exc_info=True)
 
     async def check_ready(self) -> dict[str, bool]:
         """Ping both database connections. Never raises; failures read as ``False``."""
         return {
             "api_database": await _ping(self._ping_api),
             "reader_database": await _ping(self.executor.ping),
+        }
+
+    async def cache_status(self) -> dict[str, object]:
+        """What the semantic cache is doing in this process. Never raises."""
+        status: dict[str, object] = {"mode": self.settings.cache_mode}
+        if self.cache is None:
+            return {**status, "enabled": False}
+        return {
+            **status,
+            "enabled": True,
+            "backend": self.settings.cache_backend,
+            "store_reachable": await _ping(self.cache.ping),
+            **self.cache.stats(),
         }
 
     async def _ping_api(self) -> None:
@@ -90,6 +130,8 @@ class Resources:
         aclose_embedder = getattr(self.embedder, "aclose", None)
         if aclose_embedder is not None:
             await aclose_embedder()
+        if self.cache is not None:
+            await self.cache.close()
         await self.executor.close()
         await self.database.dispose()
 
@@ -101,3 +143,42 @@ async def _ping(probe: Callable[[], Awaitable[None]]) -> bool:
         logger.warning("readiness_probe_failed", exc_info=True)
         return False
     return True
+
+
+def _build_cache(settings: Settings, embedder: Embedder) -> SemanticCache | None:
+    """The semantic cache, or ``None`` when ``FINQON_CACHE_MODE`` is ``off``."""
+    if settings.cache_mode == "off":
+        return None
+    store: CacheStore
+    if settings.cache_backend == "redis":
+        from finqon.cache.redis_store import RedisStore  # noqa: PLC0415 - optional at runtime
+
+        store = RedisStore.from_url(
+            settings.redis_url.get_secret_value(),
+            prefix=settings.cache_key_prefix,
+            dimensions=settings.embedding_dimensions,
+            index_kind=settings.cache_vector_index,
+            timeout_seconds=max(0.1, settings.cache_op_timeout_ms / 1000),
+        )
+    else:
+        store = MemoryStore(max_entries=settings.cache_memory_max_entries)
+
+    async def embed(text: str) -> list[float]:
+        return (await embedder.embed([text]))[0]
+
+    logger.info(
+        "semantic_cache_configured",
+        extra={"mode": settings.cache_mode, "backend": settings.cache_backend},
+    )
+    return SemanticCache(
+        store,
+        embed,
+        CacheConfig(
+            similarity_threshold=settings.cache_similarity_threshold,
+            ttl_seconds=settings.cache_ttl_seconds,
+            op_timeout=settings.cache_op_timeout_ms / 1000,
+            embed_timeout=settings.cache_embed_timeout_ms / 1000,
+            breaker_cooldown=settings.cache_breaker_cooldown_seconds,
+            dimensions=settings.embedding_dimensions,
+        ),
+    )

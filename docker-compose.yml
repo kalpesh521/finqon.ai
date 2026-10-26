@@ -51,6 +51,30 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # Semantic cache store. Optional: `docker compose --profile cache up -d redis`, then set
+  # FINQON_CACHE_MODE=shadow and FINQON_CACHE_BACKEND=redis in .env (see docs/semantic-cache.md).
+  # Redis Stack Server is required: the vector index needs the RediSearch module.
+  # The cache is disposable, so there is no volume and no persistence. Memory is capped and
+  # the oldest-used keys are evicted first. The API does not wait for this service: if it is
+  # down, questions are simply answered by the agent.
+  redis:
+    image: redis/redis-stack-server:7.4.0-v1
+    profiles: ["cache"]
+    environment:
+      REDIS_ARGS: >-
+        --maxmemory ${FINQON_REDIS_MAXMEMORY:-256mb}
+        --maxmemory-policy allkeys-lru
+        --save ""
+        --appendonly no
+    ports:
+      - "127.0.0.1:${FINQON_REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -59,6 +83,8 @@ services:
     env_file: .env
     environment:
       <<: *db-env
+      # Same rule as the database URLs: inside Compose the host is the service name.
+      FINQON_REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"
     depends_on:

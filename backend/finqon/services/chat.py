@@ -49,6 +49,8 @@ class OpenedConversation:
     history: list[HistoryTurn]
     previous_sql: str | None
     uploaded_files: list[str] = field(default_factory=list)
+    # Fingerprint of the user's ledger when the request began; empty disables the cache.
+    data_version: str = ""
 
 
 class ChatService:
@@ -64,19 +66,33 @@ class ChatService:
         settings = self._r.settings
         async with self._r.database.user_scope(user_id) as session:
             repo = ConversationRepository(session)
+            statements = StatementRepository(session)
             if conversation_id is None:
                 created = await repo.create(user_id, first_message.strip())
-                files = await StatementRepository(session).account_names()
-                return OpenedConversation(created.id, [], None, files)
+                files = await statements.account_names()
+                version = await self._data_version(statements)
+                return OpenedConversation(created.id, [], None, files, version)
             if await repo.get(conversation_id) is None:
                 # Not found and not owned look identical, on purpose.
                 raise NotFoundError("Conversation not found.")
             recent = await repo.recent_messages(conversation_id, settings.agent_history_turns)
-            files = await StatementRepository(session).account_names()
+            files = await statements.account_names()
+            version = await self._data_version(statements)
 
         history = [HistoryTurn(m.question, m.sql, m.result_summary, m.answer) for m in recent]
         previous_sql = next((m.sql for m in reversed(recent) if m.sql), None)
-        return OpenedConversation(conversation_id, history, previous_sql, files)
+        return OpenedConversation(conversation_id, history, previous_sql, files, version)
+
+    async def _data_version(self, statements: StatementRepository) -> str:
+        """The ledger fingerprint the semantic cache keys on; skipped when the cache is off."""
+        if self._r.turn_runner is None:
+            return ""
+        try:
+            return await statements.data_version()
+        except Exception:
+            # Without a version the cache stays out of the way; the turn is unaffected.
+            logger.warning("data_version_failed", exc_info=True)
+            return ""
 
     async def list_conversations(
         self, user_id: uuid.UUID, limit: int, offset: int
@@ -138,6 +154,8 @@ class ChatService:
             record_usage=self._record_usage,
             save_turn=self._save_turn,
             embed=self._embed_query,
+            clarify_before_model=settings.agent_clarify_before_model,
+            context_top_views=settings.agent_context_top_views,
             limits=AgentLimits(
                 max_model_steps=settings.agent_max_model_steps,
                 max_sql_executions=settings.agent_max_sql_executions,
@@ -150,7 +168,13 @@ class ChatService:
                 async for event in run_canned(turn, deps, gate.reply, gate.status):
                     yield event
                 return
-            async for event in run_turn(turn, deps):
+            runner = self._r.turn_runner
+            events = (
+                runner.run(turn, deps, data_version=conversation.data_version)
+                if runner is not None
+                else run_turn(turn, deps)
+            )
+            async for event in events:
                 yield event
         except Exception:
             logger.exception("chat_turn_failed")

@@ -66,23 +66,35 @@ uvicorn finqon.main:app_factory --factory --reload
 Browser
   │  POST /api/v1/chat   Bearer JWT
   ▼
-FastAPI  ──►  ChatService  ──►  agent loop  ◄──►  LLM
-                                    │
-                                    │  run_sql_query
-                                    ▼
-                              sqlglot guard
-                              SELECT only · 3 views · LIMIT ≤ 500
-                                    │
-                                    ▼
-                              finqon_reader
-                              read-only · 5s timeout · finqon.user_id
-                                    │
-                                    ▼
-                              PostgreSQL 16 + pgvector + RLS
-                                    │
-                                    ▼
-                         SSE: status · sql · table · chart · token · done
+FastAPI ─► ChatService ─► input screening (PII, small talk)
+                              │
+                              ▼
+                    semantic cache ── hit ─► replay, verify, answer (no model)
+                              │ miss
+                              ▼
+                    ambiguity gate ── ambiguous ─► clarifying question (no model)
+                              │ clear
+                              ▼
+                    context retriever (top views, "eating out" → Dining)
+                              │
+                              ▼
+        SQL agent ◄──► LLM          ◄── error fixer (hint) ◄──┐
+              │                                              │ SQL error
+              ▼                                              │
+        sqlglot guard (SELECT only · 3 views · LIMIT ≤ 500) ──┤ bad syntax
+              │ forbidden: refuse, never repair              │
+              ▼                                              │
+        finqon_reader (read-only · 5s · finqon.user_id) ─────┘
+              │
+              ▼
+        PostgreSQL 16 + pgvector + RLS
+              │
+              ▼
+        grounding check ─► SSE: status · sql · table · chart · token · done
+                              └─► plan stored in the semantic cache
 ```
+
+Every stage, its contract and the full diagram are in [docs/AGENT_PATTERN.md](docs/AGENT_PATTERN.md).
 
 The loop is capped at 6 model steps, 3 SQL runs, 2 repairs, and 30 seconds.
 
@@ -199,6 +211,10 @@ Settings use the `FINQON_` prefix and are read from the environment or the root 
 | `FINQON_LLM_MODEL`           | Optional. Defaults to `gemini-flash-latest`               |
 | `FINQON_CORS_ORIGINS`        | Optional. Default `http://localhost:5173`                 |
 | `FINQON_TIMEZONE`            | Optional. Default `Asia/Kolkata`                          |
+| `FINQON_AGENT_CLARIFY_BEFORE_MODEL` | Optional. Default `true`. Ask about a bare quarter without a model call. See [agent pipeline](docs/AGENT_PATTERN.md) |
+| `FINQON_AGENT_CONTEXT_TOP_VIEWS` | Optional. Default `5`. Views the context retriever sends to the model |
+| `FINQON_CACHE_MODE`          | Optional. `off` (default), `shadow`, `on`. See [semantic cache](docs/semantic-cache.md) |
+| `FINQON_CACHE_BACKEND`       | Optional. `memory` (default) or `redis` (needs Redis Stack and `FINQON_REDIS_URL`) |
 
 
 ---

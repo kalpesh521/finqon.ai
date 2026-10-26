@@ -1,7 +1,8 @@
 """System prompt assembly.
 
 Sections, in order: rules, view and column comments, categories and transaction types,
-date ranges, few-shot examples, recent turns, and the previous SQL. Result sets are never
+date ranges, few-shot examples, the retrieved context for this question, recent turns, and
+the previous SQL. Result sets are never
 placed in the prompt, only one-line summaries of earlier turns.
 """
 
@@ -10,7 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
-from finqon.agent.catalog import SchemaCatalog
+from finqon.agent.catalog import SchemaCatalog, ViewInfo
+from finqon.agent.context import RetrievedContext
 from finqon.agent.date_ranges import compute_date_ranges
 from finqon.agent.few_shot_examples import (
     CLARIFICATION_EXAMPLE,
@@ -68,9 +70,9 @@ class HistoryTurn:
     answer: str
 
 
-def _schema_section(catalog: SchemaCatalog) -> str:
+def _schema_section(views: tuple[ViewInfo, ...]) -> str:
     lines = ["## Views you may query"]
-    for view in catalog.views:
+    for view in views:
         lines.append(f"\n{view.name}: {view.comment}")
         for column in view.columns:
             lines.append(f"  - {column.name} ({column.data_type}): {column.comment}")
@@ -169,13 +171,18 @@ def build_system_prompt(
     history: list[HistoryTurn],
     previous_sql: str | None,
     uploaded_files: list[str] | None = None,
+    *,
+    context: RetrievedContext | None = None,
 ) -> str:
+    """Assemble the system prompt. ``context`` narrows and orders the schema for one question."""
+    views = context.views if context is not None else catalog.views
     sections = [
         RULES,
-        _schema_section(catalog),
+        _schema_section(views),
         _lookups_section(catalog),
         _date_section(today),
         _few_shot_section(),
+        context.render() if context is not None else "",
         _history_section(history),
         _previous_sql_section(previous_sql),
         _uploads_section(uploaded_files or []),

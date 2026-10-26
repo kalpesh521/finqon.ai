@@ -1,5 +1,10 @@
 """The agent loop: one async function, no LLM framework.
 
+Pipeline (docs/AGENT_PATTERN.md): ambiguity gate -> context retriever -> SQL agent ->
+guardrails -> execute -> error fixer (on failure, back to the SQL agent) -> grounded
+response. The semantic cache sits in front of all of it (``finqon.cache``). Each stage is
+its own module; this file only sequences them.
+
 ``run_turn`` takes a question and yields ``ChatEvent`` objects. Caps: 6 model steps, 3 SQL
 executions, 2 repairs, about 30 seconds (see docs/architecture.md).
 
@@ -27,7 +32,11 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from finqon.agent.ambiguity import Clarification, check_ambiguity
+from finqon.agent.catalog import SchemaCatalog
+from finqon.agent.context import retrieve_context
 from finqon.agent.contracts import AgentDeps, ModelUsage, TurnInput, TurnRecord
+from finqon.agent.error_fixer import diagnose
 from finqon.agent.grounding import numbers_in, verify_answer
 from finqon.agent.prompt_builder import build_system_prompt
 from finqon.agent.tools import (
@@ -109,6 +118,7 @@ class _State:
     final: _Final | None = None
     awaiting_summary: bool = False
     streamed: str = ""  # answer text already sent to the client as live tokens
+    catalog: SchemaCatalog | None = None  # lets the error fixer name real columns
 
 
 # ------------------------------------------------------------------------------ helpers
@@ -157,7 +167,7 @@ def _tool_message(call: ToolCall, payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _chunks(text: str) -> list[str]:
+def chunk_text(text: str) -> list[str]:
     pieces: list[str] = []
     current = ""
     for word in re.findall(r"\S+\s*", text):
@@ -188,16 +198,37 @@ async def run_turn(turn: TurnInput, deps: AgentDeps) -> AsyncIterator[ChatEvent]
     )
     try:
         catalog = await deps.catalog.get()
-        system_prompt = build_system_prompt(
-            catalog, turn.today, turn.history, turn.previous_sql, turn.uploaded_files
+        state.catalog = catalog
+        clarification = (
+            check_ambiguity(
+                turn.question,
+                history=turn.history,
+                previous_sql=turn.previous_sql,
+                category_names=[c.name for c in catalog.categories],
+            )
+            if deps.clarify_before_model
+            else None
         )
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": turn.question},
-        ]
-        yield StatusEvent(stage="thinking")
-        async for event in _loop(turn, deps, state, messages):
-            yield event
+        if clarification is not None:
+            for event in _preflight_clarification(clarification, state):
+                yield event
+        else:
+            context = retrieve_context(turn.question, catalog, top_k=deps.context_top_views)
+            system_prompt = build_system_prompt(
+                catalog,
+                turn.today,
+                turn.history,
+                turn.previous_sql,
+                turn.uploaded_files,
+                context=context,
+            )
+            messages: list[dict[str, Any]] = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": turn.question},
+            ]
+            yield StatusEvent(stage="thinking")
+            async for event in _loop(turn, deps, state, messages):
+                yield event
 
         final = state.final
         if final is None:  # pragma: no cover - _loop either sets it or raises
@@ -205,7 +236,7 @@ async def run_turn(turn: TurnInput, deps: AgentDeps) -> AsyncIterator[ChatEvent]
         if final.stream and state.streamed.strip() != final.text.strip():
             if state.streamed.strip():
                 yield RetractEvent()
-            for piece in _chunks(final.text):
+            for piece in chunk_text(final.text):
                 yield TokenEvent(text=piece)
         message_id = await deps.save_turn(_record(turn, state, final.text, final.status))
         yield DoneEvent(
@@ -217,6 +248,15 @@ async def run_turn(turn: TurnInput, deps: AgentDeps) -> AsyncIterator[ChatEvent]
     except _TurnFailure as failure:
         await _save_failure(turn, deps, state, failure)
         yield ErrorEvent(code=failure.code, message=failure.message)
+
+
+def _preflight_clarification(clarification: Clarification, state: _State) -> list[ChatEvent]:
+    """Ask before answering, with no model call. Same event and stored shape as the tool."""
+    logger.info("agent_preflight_clarification", extra={"reason": clarification.reason})
+    options = list(clarification.options)
+    stored = clarification.question + (f" ({' / '.join(options)})" if options else "")
+    state.final = _Final("clarification", stored, stream=False)
+    return [ClarificationEvent(question=clarification.question, options=options)]
 
 
 def _record(turn: TurnInput, state: _State, answer: str, status: str) -> TurnRecord:
@@ -456,7 +496,9 @@ async def _run_sql(
                 ),
             }
         else:
-            payload = {"error": str(exc), "instruction": "Fix the SQL and call the tool again."}
+            payload = _repair_payload(
+                state, str(exc), args.sql, "Fix the SQL and call the tool again."
+            )
         messages.append(_tool_message(call, payload))
         return
 
@@ -480,9 +522,7 @@ async def _run_sql(
             result = await deps.sql.execute(guarded, turn.user_id)
     except QueryExecutionError as exc:
         state.repairs += 1
-        messages.append(
-            _tool_message(call, {"error": str(exc), "instruction": "Fix the SQL and try again."})
-        )
+        messages.append(_tool_message(call, _repair_payload(state, str(exc), guarded.sql)))
         return
     except TimeoutError as exc:
         raise _TurnFailure("timeout", "That took too long. Please try again.") from exc
@@ -506,6 +546,18 @@ async def _run_sql(
     yield choose_chart(args.chart_hint, result.columns, result.row_count)
     payload["note"] = "Quote only figures and dates that appear in this result."
     messages.append(_tool_message(call, payload))
+
+
+def _repair_payload(
+    state: _State, error: str, sql: str, instruction: str = "Fix the SQL and try again."
+) -> dict[str, Any]:
+    """The tool error for the model: the original message, plus the error fixer's hint."""
+    payload: dict[str, Any] = {"error": error, "instruction": instruction}
+    diagnosis = diagnose(error, sql, state.catalog)
+    if diagnosis is not None:
+        payload["hint"] = diagnosis.hint
+        logger.info("agent_sql_error", extra={"kind": diagnosis.kind})
+    return payload
 
 
 def _validation_message(exc: ValidationError) -> str:
@@ -595,7 +647,7 @@ async def run_canned(
 ) -> AsyncIterator[ChatEvent]:
     """A fixed reply with no model call and no SQL (greetings, privacy notices)."""
     state = _State(deadline=0.0, allowed=[])
-    for piece in _chunks(text):
+    for piece in chunk_text(text):
         yield TokenEvent(text=piece)
     message_id = await deps.save_turn(_record(turn, state, text, status))
     yield DoneEvent(

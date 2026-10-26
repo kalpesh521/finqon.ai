@@ -24,6 +24,16 @@ async def liveness() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@router.get("/health/cache")
+async def cache_status(resources: ResourcesDep) -> dict[str, object]:
+    """Semantic cache mode, store reachability, hit rate and counters for this replica.
+
+    Aggregates only. It never returns questions, answers or user ids. Always 200: a cache
+    that is down must not fail a probe, because chat works without it.
+    """
+    return await resources.cache_status()
+
+
 @router.get("/health/ready", response_model=None)
 async def readiness(resources: ResourcesDep) -> JSONResponse | dict[str, object]:
     checks = await resources.check_ready()

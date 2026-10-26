@@ -31,7 +31,7 @@ def create_engine(database_url: str) -> AsyncEngine:
         connect_args=async_engine_connect_args(parsed),
         pool_size=5,
         max_overflow=5,
-        pool_pre_ping=True,  # Neon suspends idle computes and drops connections.
+        pool_pre_ping=True,  # drop connections the server has already closed
         pool_recycle=300,
     )
 

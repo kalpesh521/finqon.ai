@@ -60,7 +60,7 @@ class QueryExecutor:
         pool = await asyncpg.create_pool(
             dsn=parsed.asyncpg_dsn(),
             ssl=True if parsed.ssl else None,
-            min_size=0,  # connect lazily: Neon computes may be suspended
+            min_size=0,  # open connections on first use
             max_size=max_size,
             max_inactive_connection_lifetime=60,
             command_timeout=15,

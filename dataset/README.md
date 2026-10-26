@@ -7,7 +7,7 @@ move.
 ```bash
 python dataset/generate_ledger.py --end-date 2026-10-21   # writes dataset/output/*.csv
 python dataset/normalize_descriptions.py                  # fills merchant and category
-python dataset/load_ledger.py                             # loads Neon (needs FINQON_LOADER_DATABASE_URL)
+python dataset/load_ledger.py                             # loads Postgres (needs FINQON_LOADER_DATABASE_URL)
 ```
 
 The same seed (`20260101`) and the same `--end-date` always give the same files. Without

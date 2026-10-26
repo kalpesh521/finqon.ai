@@ -30,7 +30,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Databases (Neon direct/session connections, one role each).
+    # Databases. One role per URL. Session connections, not a transaction-mode pooler.
     api_database_url: SecretStr = SecretStr("")
     reader_database_url: SecretStr = SecretStr("")
     loader_database_url: SecretStr = SecretStr("")

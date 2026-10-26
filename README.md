@@ -2,102 +2,63 @@
 
 # FinQon.ai
 
-Plain-English questions over your bank statement.  
-The answer, the SQL, the chart, and the rows — from the same query.
+ 
 
 [Start](#start) · [Walkthrough](#product-walkthrough) · [Text to SQL](#text-to-sql) · [Statement RAG](#statement-rag) · [Schema](#schema) · [Stack](#stack)
 
 ---
 
-You ask a question. A small FastAPI agent writes a `SELECT`, PostgreSQL runs it under a read-only role, and the React desk plots those rows. Numbers in the reply have to come from the result. A second path searches your uploaded statement by meaning, using embeddings stored next to each transaction. 
-
----
-
 ## Start
 
-You need Python 3.12, Node 20+, a Neon Postgres project (pgvector enabled), and an OpenAI-compatible API key.
+You need Docker, and an OpenAI-compatible API key. The database is PostgreSQL 16 with pgvector, started by Docker Compose. Python 3.12 and Node 20+ are only needed if you run the API or the UI outside Docker.
 
 ```bash
-cp .env.example .env     # fill the four database URLs, JWT secret, and model key
-```
-
-Use Neon **direct (session)** URLs, not the transaction pooler. `set_config` for row-level security has to stay on the same connection as the query.
-
-### Backend
-
-```bash
-cd backend
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-
-python -m finqon.db.bootstrap_roles   # finqon_api, finqon_reader, finqon_loader
-alembic upgrade head                  # schemas, RLS, views, uploads, embeddings
-python ../dataset/load_ledger.py      # two seed users
-
-uvicorn finqon.main:app_factory --factory --reload
-```
-
-API at `http://localhost:8000`. Docs at `/docs`. `GET /health` returns `{"status":"ok"}`.
-
-### Frontend
-
-The API must already be on port 8000. Vite proxies `/api` and `/health`.
-
-```bash
-cd frontend
-npm install
-npm run dev          # http://localhost:5173
+cp .env.example .env      # then set FINQON_JWT_SECRET and FINQON_LLM_API_KEY
 ```
 
 ### Docker
 
-The database stays on Neon. Compose runs the API and the built UI.
+PostgreSQL, the API, and the UI:
 
 ```bash
+docker compose up -d postgres                     # pgvector/pgvector:pg16, host port 5433
 docker compose --profile setup run --rm setup    # once: roles, migrations, seed
 docker compose up --build api web                # API :8000, UI :5173
 ```
 
+`make docker` runs those three steps. Setup is safe to repeat. Repeating it reloads the seed ledger and deletes statement uploads that belong to the two seed users.
 
-| Service | What it does                                                                       |
-| ------- | ---------------------------------------------------------------------------------- |
-| `api`   | Production image. Read-only filesystem, no extra capabilities.                     |
-| `web`   | Built React app. Proxies `/api` to the API container.                              |
-| `setup` | One-off. Needs `FINQON_ADMIN_DATABASE_URL`. Safe to run again.                     |
-| `eval`  | `docker compose --profile eval run --rm eval` writes `eval/reports/latest.md`.     |
-| `test`  | `docker compose --profile test run --rm test` runs pytest, including the database. |
+Containers talk to the hostname `postgres` on the Compose network. Commands you run on the machine (`make setup`, uvicorn) use `localhost:5433`. Host port 5432 is left alone, because a machine Postgres often already has it. Both sides use `FINQON_POSTGRES_PASSWORD`.
 
 
-### First question
+| Service    | What it does                                                                                         |
+| ---------- | ---------------------------------------------------------------------------------------------------- |
+| `postgres` | PostgreSQL 16 with pgvector. Data volume `finqon_pgdata`. `pg_trgm` and `vector` come from Alembic. |
+| `api`      | Production image. Read-only filesystem, no extra capabilities.                                      |
+| `web`      | Built React app. Proxies `/api` to the API container.                                               |
+| `setup`    | One-off. Creates roles, applies migrations, loads the seed.                                         |
+| `eval`     | `docker compose --profile eval run --rm eval` writes `eval/reports/latest.md`.                      |
+| `test`     | `docker compose --profile test run --rm test` runs pytest, including the database.                  |
 
-Sign in as the seed user (`kalpeshpawar@gmail.com`, password is `FINQON_SEED_PASSWORD`) and ask:
+To bring an existing database across, `pg_dump --no-owner --no-acl` it and restore into local `finqon`. If that dump already has the roles, schemas, and rows, skip `setup`. `setup` is for an empty database.
 
-> How much did I spend on eating out last month?
+### Without Docker
 
-Or skip the browser:
+Start Postgres first (`docker compose up -d postgres`), with the `localhost` URLs in `.env`.
 
 ```bash
-finqon-cli reference --user kalpeshpawar@gmail.com
-finqon-cli ask "How much did I spend on eating out last month?" --user kalpeshpawar@gmail.com
+cd frontend && npm install && npm run dev          # http://localhost:5173
+
+cd backend
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+python -m finqon.db.bootstrap_roles
+alembic upgrade head
+python ../dataset/load_ledger.py
+uvicorn finqon.main:app_factory --factory --reload
 ```
 
-`reference` runs the known-good query and needs no model key. `ask` runs the full agent. “Last month” is resolved in `Asia/Kolkata`, so the rupee figure moves with the calendar. The seed rows do not.
 
----
-
-## Product walkthrough
-
-1. **Land.** Dark full-viewport page. The call to action opens the auth card.
-2. **Sign in or register.** Same card, same fields. Access token stays in memory. Refresh token is stored and rotated on each use.
-3. **Open the desk.** History on the left, the thread in the middle, evidence on the right.
-4. **Ask.** Status steps run `thinking → querying → summarizing`. Tokens stream only after the answer is checked.
-5. **Read the evidence.** Show SQL, switch Bar / Pie / Line, scroll the table. The chart is plotted from `table.rows`, never from the sentence.
-6. **Follow up.** “What about the month before?” stays in the same conversation. The model sees the previous SQL and a one-line summary, not the old rows.
-7. **Upload a statement.** Paperclip or drop a CSV, XLSX, or text PDF. The job parses, reconciles, classifies, embeds, and imports. Then ask about that file the same way.
-
-Under 1120px the history becomes a drawer. Under 800px the evidence panel follows the answer.
-
----
 
 ## Text to SQL
 
@@ -117,7 +78,7 @@ FastAPI  ──►  ChatService  ──►  agent loop  ◄──►  LLM
                               read-only · 5s timeout · finqon.user_id
                                     │
                                     ▼
-                              Neon Postgres + RLS
+                              PostgreSQL 16 + pgvector + RLS
                                     │
                                     ▼
                          SSE: status · sql · table · chart · token · done
@@ -134,11 +95,6 @@ The loop is capped at 6 model steps, 3 SQL runs, 2 repairs, and 30 seconds.
 | `ask_clarification`   | At most three options when the question is ambiguous. No SQL is run.              |
 
 
-The model never receives the full result. After a query it sees the columns, the row count, the first 20 rows, and aggregates. Every number and ISO date in the draft must appear in that payload, the question, or the SQL. One mismatch triggers a single rewrite. A second mismatch becomes a fixed refusal.
-
-Dates such as “last month” and “this quarter” are computed in Python and placed in the prompt. The model does not invent the calendar.
-
-A destructive request has to pass five independent layers: the prompt, the sqlglot guard, the `finqon_reader` role (`NOSUPERUSER NOBYPASSRLS`), forced row-level security, and the grounding check. The guard rejects `set_config`, `current_setting`, and `pg_*`, so model SQL cannot read or change who the user is.
 
 ---
 
@@ -214,12 +170,12 @@ Five schemas: `identity`, `ledger`, `conversation`, `operations`, `reporting`. A
 | ---------- | ------------------------------------------------------------------- |
 | Frontend   | React, TypeScript, Vite, Tailwind CSS                               |
 | Backend    | Python, FastAPI                                                     |
-| Database   | PostgreSQL on Neon, Alembic                                         |
+| Database   | PostgreSQL 16 + pgvector, Alembic                                   |
 | LLM        | Gemini (`gemini-flash-latest`) through the OpenAI SDK               |
 | Agent      | Hand-rolled tool loop.                                              |
 | SQL safety | sqlglot guard, read-only role, row-level security                   |
 | Search     | pgvector and `pg_trgm`                                              |
-| Packaging  | Docker Compose for the API and the frontend. Database stays on Neon |
+| Packaging  | Docker Compose for Postgres, the API, and the frontend              |
 
 
 ---
@@ -231,10 +187,11 @@ Settings use the `FINQON_` prefix and are read from the environment or the root 
 
 | Variable                     | Who needs it                                              |
 | ---------------------------- | --------------------------------------------------------- |
-| `FINQON_API_DATABASE_URL`    | API role `finqon_api`                                     |
+| `FINQON_POSTGRES_PASSWORD`   | Local superuser, and the three roles inside Compose      |
+| `FINQON_API_DATABASE_URL`    | API role `finqon_api`. Host tools use `localhost`         |
 | `FINQON_READER_DATABASE_URL` | Role `finqon_reader`, model SQL                           |
 | `FINQON_LOADER_DATABASE_URL` | Seed loader                                               |
-| `FINQON_ADMIN_DATABASE_URL`  | Bootstrap and Alembic only                                |
+| `FINQON_ADMIN_DATABASE_URL`  | Bootstrap and Alembic only. User `finqon`                 |
 | `FINQON_SEED_PASSWORD`       | The two seed users                                        |
 | `FINQON_JWT_SECRET`          | At least 32 characters                                    |
 | `FINQON_LLM_API_KEY`         | Real answers and the eval                                 |

@@ -1,11 +1,21 @@
-# FinQon.ai API. The database is Neon: there is deliberately no Postgres service here.
+# FinQon.ai. PostgreSQL 16 with pgvector runs in this Compose file.
 #
-#   cp .env.example .env            # then fill it in
-#   docker compose --profile setup run --rm setup    # once: roles, migrations, seed data
-#   docker compose up --build api web   # API on :8000, UI on :5173
-#   docker compose --profile eval run --rm eval       # writes eval/reports/latest.md
+#   cp .env.example .env          # JWT, model key, seed password
+#   docker compose up -d postgres
+#   docker compose --profile setup run --rm setup   # once: roles, migrations, seed
+#   docker compose up --build api web               # API :8000, UI :5173
+#
+# Containers ignore the hostnames in .env and use the `postgres` service.
+# Processes on the machine (make setup, uvicorn) use the localhost URLs in .env.
+# Both sides share FINQON_POSTGRES_PASSWORD. Local passwords must be URL-safe.
 
 name: finqon
+
+x-db-env: &db-env
+  FINQON_ADMIN_DATABASE_URL: postgresql://finqon:${FINQON_POSTGRES_PASSWORD:-finqon_local_dev}@postgres:5432/finqon?sslmode=disable
+  FINQON_API_DATABASE_URL: postgresql://finqon_api:${FINQON_POSTGRES_PASSWORD:-finqon_local_dev}@postgres:5432/finqon?sslmode=disable
+  FINQON_READER_DATABASE_URL: postgresql://finqon_reader:${FINQON_POSTGRES_PASSWORD:-finqon_local_dev}@postgres:5432/finqon?sslmode=disable
+  FINQON_LOADER_DATABASE_URL: postgresql://finqon_loader:${FINQON_POSTGRES_PASSWORD:-finqon_local_dev}@postgres:5432/finqon?sslmode=disable
 
 x-tools: &tools
   build:
@@ -13,17 +23,47 @@ x-tools: &tools
     dockerfile: backend/Dockerfile
     target: tools
   env_file: .env
+  environment:
+    <<: *db-env
   working_dir: /app/backend
+  depends_on:
+    postgres:
+      condition: service_healthy
 
 services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: finqon
+      POSTGRES_PASSWORD: ${FINQON_POSTGRES_PASSWORD:-finqon_local_dev}
+      POSTGRES_DB: finqon
+    ports:
+      # Host 5433, container 5432. 5432 is left for a Postgres already installed on the machine.
+      - "${FINQON_POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - finqon_pgdata:/var/lib/postgresql/data
+    shm_size: 128mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finqon -d finqon"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
   api:
     build:
       context: .
       dockerfile: backend/Dockerfile
       target: api
     env_file: .env
+    environment:
+      <<: *db-env
     ports:
       - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     read_only: true
     cap_drop: [ALL]
@@ -38,8 +78,8 @@ services:
       - api
     restart: unless-stopped
 
-  # One-off: create the three roles, apply migrations, load the two seed users.
-  # Needs FINQON_ADMIN_DATABASE_URL (the Neon owner) in .env. Safe to run again.
+  # One-off. Safe to run again. Re-running reloads the seed ledger and removes
+  # statement uploads that belong to the two seed users.
   setup:
     <<: *tools
     profiles: ["setup"]
@@ -61,3 +101,6 @@ services:
     <<: *tools
     profiles: ["test"]
     command: ["pytest", "-q"]
+
+volumes:
+  finqon_pgdata:

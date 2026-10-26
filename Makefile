@@ -47,5 +47,14 @@ web: ## Run the React UI on http://localhost:5173
 eval: ## Run the evaluation set against the live model (spends model quota)
 	cd $(BACKEND) && .venv/bin/python ../eval/run_eval.py
 
-docker-api: ## Build and run the production image
+db: ## Start local Postgres 16 (pgvector) and wait until it accepts connections
+	docker compose up -d --wait postgres
+
+docker: ## Start Postgres, run setup once, then the API and the UI
+	docker compose up -d --wait postgres
+	docker compose --profile setup run --rm setup
+	docker compose up --build api web
+
+docker-api: ## Build and run the API against the Compose Postgres service
+	docker compose up -d --wait postgres
 	docker compose up --build api

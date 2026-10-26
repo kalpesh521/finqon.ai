@@ -1,8 +1,8 @@
 """Connection URL helpers.
 
-Neon hands out libpq-style URLs (``postgresql://...?sslmode=require&channel_binding=require``).
-asyncpg and SQLAlchemy's asyncpg dialect do not understand those query options, so
-they are translated here. The same URLs keep working on self-hosted PostgreSQL.
+Libpq URLs may carry ``sslmode`` and ``channel_binding``. asyncpg and SQLAlchemy's
+asyncpg dialect do not understand those query options, so they are translated here.
+Local Docker uses ``sslmode=disable``. A hosted server can keep ``sslmode=require``.
 """
 
 from __future__ import annotations

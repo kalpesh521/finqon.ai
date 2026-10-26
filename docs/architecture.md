@@ -8,7 +8,7 @@ covers setup and usage; this file covers structure and the reasons for it.
 ```
 backend/
   finqon/            the installable package (the API and the agent)
-  alembic/           migrations, run as the Neon owner
+  alembic/           migrations, run as the database owner (`finqon` in Docker)
   tests/
     unit/            no database, no network, no model key
     integration/     real roles and RLS on Postgres; skips when not configured
@@ -88,8 +88,12 @@ cannot expose another user's rows, because RLS is enforced by the database for t
 Logs are JSON, carry the request id and (after auth) the user id, and never contain query
 strings, headers, tokens or passwords.
 
-Neon notes: use the direct (session) host, not the pooler, because `set_config(..., true)` must
-live in the same session as the query. Connections are opened lazily because computes suspend.
+Database: PostgreSQL 16 with the `vector` and `pg_trgm` extensions, started by Docker Compose
+(`pgvector/pgvector:pg16`). Use a session connection, not a transaction-mode pooler, because
+`set_config(..., true)` must live in the same session as the query. Alembic creates both
+extensions. RAG stores a 768-dimension embedding on `ledger.transactions` and searches it
+with pgvector cosine distance, fused with `pg_trgm`. The same SQL runs on another Postgres
+by changing the four connection strings. The API never uses the owner role for chat queries.
 
 ## Known gaps
 

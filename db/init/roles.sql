@@ -25,8 +25,9 @@ SELECT format('ALTER ROLE finqon_reader PASSWORD %L', :'reader_password') \gexec
 SELECT format('ALTER ROLE finqon_loader PASSWORD %L', :'loader_password') \gexec
 
 -- Enforce the non-superuser attributes even if a role already existed.
--- Do not mention SUPERUSER: Neon’s owner cannot change that attribute, and CREATE ROLE
--- already set NOSUPERUSER.
+-- Do not mention SUPERUSER. CREATE ROLE already set NOSUPERUSER, and a hosted owner
+-- cannot change that attribute. The local Docker user `finqon` is a superuser and
+-- does not need this script to alter itself.
 ALTER ROLE finqon_api    NOBYPASSRLS NOCREATEDB NOCREATEROLE;
 ALTER ROLE finqon_reader NOBYPASSRLS NOCREATEDB NOCREATEROLE;
 ALTER ROLE finqon_loader NOBYPASSRLS NOCREATEDB NOCREATEROLE;
